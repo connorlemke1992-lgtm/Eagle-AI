@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import Caddie from './components/Caddie'
-import Scorecard from './components/Scorecard'
-import Stats from './components/Stats'
-import Games from './components/Games'
-import Coach from './components/Coach'
-import HoleView from './components/HoleView'
+import Caddie from './Components/Caddie'
+import Scorecard from './Components/Scorecard'
+import Stats from './Components/Stats'
+import Games from './Components/Games'
+import Coach from './Components/Coach'
+import HoleView from './Components/HoleView'
 
 const tabs = [
   { id: 'caddie', label: 'Caddie', icon: '🎯' },
@@ -51,7 +51,7 @@ export default function App() {
         {activeTab === 'stats' && <Stats scores={scores} />}
         {activeTab === 'games' && <Games />}
         {activeTab === 'coach' && <Coach currentHole={currentHole} />}
-{activeTab === 'map' && (
+        {activeTab === 'map' && (
           <HoleView currentHole={currentHole} setCurrentHole={setCurrentHole} />
         )}
       </div>
