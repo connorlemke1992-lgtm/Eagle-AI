@@ -19,9 +19,36 @@ function ScoreDisplay({ score, par, size = 24 }) {
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    zIndex: 1,
   }
 
-  if (diff <= -2) {
+  if (score === 1) {
+    // Hole in one — number 1 with two circles
+    return (
+      <span style={{ position: 'relative', display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center',
+        width: size + 8, height: size + 8 }}>
+        <span style={{ position: 'absolute', width: size + 8, height: size + 8,
+          borderRadius: '50%', border: '1.5px solid #111' }} />
+        <span style={{ position: 'absolute', width: size, height: size,
+          borderRadius: '50%', border: '1.5px solid #111' }} />
+        <span style={numStyle}>1</span>
+      </span>
+    )
+  } else if (diff <= -3) {
+    // Albatross — two circles
+    return (
+      <span style={{ position: 'relative', display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center',
+        width: size + 8, height: size + 8 }}>
+        <span style={{ position: 'absolute', width: size + 8, height: size + 8,
+          borderRadius: '50%', border: '1.5px solid #111' }} />
+        <span style={{ position: 'absolute', width: size, height: size,
+          borderRadius: '50%', border: '1.5px solid #111' }} />
+        <span style={numStyle}>{score}</span>
+      </span>
+    )
+  } else if (diff === -2) {
     // Eagle — two circles
     return (
       <span style={{ position: 'relative', display: 'inline-flex',
@@ -93,6 +120,7 @@ function getPlusMinusColor(diff) {
 }
 
 export default function Scorecard({ scores, setScores, currentHole, setCurrentHole, selectedCourse }) {
+  const [customInput, setCustomInput] = useState('')
 
   const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
                     selectedCourse?.course?.tees?.female?.[0]?.holes || null
@@ -120,6 +148,14 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
     setScores(next)
   }
 
+  function submitCustomScore() {
+    const val = parseInt(customInput)
+    if (val > 0) {
+      setScore(val)
+      setCustomInput('')
+    }
+  }
+
   function setPutts(val) {
     try {
       const stored = JSON.parse(localStorage.getItem('putts') || '[]')
@@ -136,7 +172,8 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
   }
 
   const scoreOptions = [
-    { label: 'Eagle', val: h.par - 2 },
+    { label: 'HIO', val: 1 },
+    { label: h.par >= 5 ? 'Albatross' : 'Eagle', val: h.par - 2 },
     { label: 'Birdie', val: h.par - 1 },
     { label: 'Par', val: h.par },
     { label: 'Bogey', val: h.par + 1 },
@@ -185,9 +222,7 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
             Hole {currentHole + 1} — Par {h.par}
           </div>
           {scores[currentHole] !== null && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ScoreDisplay score={scores[currentHole]} par={h.par} size={28} />
-            </div>
+            <ScoreDisplay score={scores[currentHole]} par={h.par} size={28} />
           )}
         </div>
         <div style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 12 }}>
@@ -195,8 +230,8 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
         </div>
 
         {/* Score buttons */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
-          gap: 8, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)',
+          gap: 6, marginBottom: 12 }}>
           {scoreOptions.map(o => {
             const selected = scores[currentHole] === o.val
             return (
@@ -204,15 +239,39 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
                 style={{ border: selected ? '2px solid var(--g3)' : '1px solid var(--bd)',
                   borderRadius: 10,
                   background: selected ? 'rgba(45,138,84,0.1)' : '#fff',
-                  padding: '10px 6px', cursor: 'pointer', textAlign: 'center' }}>
-                <div style={{ fontSize: 11, color: 'var(--tx2)',
+                  padding: '8px 4px', cursor: 'pointer', textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: 'var(--tx2)',
                   textTransform: 'uppercase', marginBottom: 6 }}>{o.label}</div>
                 <div style={{ display: 'flex', justifyContent: 'center' }}>
-                  <ScoreDisplay score={o.val} par={h.par} size={24} />
+                  <ScoreDisplay score={o.val} par={h.par} size={22} />
                 </div>
               </button>
             )
           })}
+        </div>
+
+        {/* Custom score input for high scores */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12,
+          alignItems: 'center' }}>
+          <div style={{ fontSize: 11, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
+            Other score:
+          </div>
+          <input
+            type="number"
+            value={customInput}
+            onChange={e => setCustomInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && submitCustomScore()}
+            placeholder="e.g. 9"
+            min={1}
+            style={{ flex: 1, border: '1px solid var(--bd)', borderRadius: 8,
+              padding: '8px 10px', fontSize: 14, textAlign: 'center' }}
+          />
+          <button onClick={submitCustomScore}
+            style={{ background: 'var(--g1)', color: '#fff', border: 'none',
+              borderRadius: 8, padding: '8px 14px', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600 }}>
+            Set
+          </button>
         </div>
 
         {/* Putts tracker */}
@@ -288,7 +347,7 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
               )
             })}
 
-            {/* Front 9 OUT subtotal */}
+            {/* OUT subtotal */}
             <tr style={{ background: 'rgba(45,138,84,0.08)',
               borderTop: '2px solid var(--g3)', borderBottom: '2px solid var(--g3)' }}>
               <td colSpan={2} style={{ padding: '6px 4px', textAlign: 'center',
@@ -331,7 +390,7 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
               )
             })}
 
-            {/* Back 9 IN subtotal */}
+            {/* IN subtotal */}
             <tr style={{ background: 'rgba(45,138,84,0.08)',
               borderTop: '2px solid var(--g3)', borderBottom: '2px solid var(--g3)' }}>
               <td colSpan={2} style={{ padding: '6px 4px', textAlign: 'center',
