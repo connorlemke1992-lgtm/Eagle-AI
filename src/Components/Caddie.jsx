@@ -93,13 +93,10 @@ Player bag distances: ${JSON.stringify(bag)}
 Tell them: what club to hit, and one key thing to watch for in this wind.`
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
@@ -126,7 +123,6 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
   return (
     <div style={{ padding: 16 }}>
 
-      {/* Hole nav */}
       <div style={{ display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', marginBottom: 12 }}>
         <button onClick={() => setCurrentHole(Math.max(0, currentHole - 1))}
