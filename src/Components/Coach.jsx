@@ -22,6 +22,7 @@ const fallbackHoles = [
 ]
 
 const quickQuestions = [
+  "What club should I hit from here?",
   "How do I hit a low punch shot into the wind?",
   "Tips for a downhill lie in the rough?",
   "How should I read a fast downhill putt?",
@@ -30,21 +31,27 @@ const quickQuestions = [
   "Give me a pre-shot routine I can use every hole.",
 ]
 
-export default function Coach({ currentHole, selectedCourse }) {
+function loadBag() {
+  try {
+    const stored = localStorage.getItem('my_bag')
+    if (stored) {
+      const arr = JSON.parse(stored)
+      return Object.fromEntries(arr.map(c => [c.name, c.yards]))
+    }
+  } catch {}
+  return null
+}
+
+export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
   const [messages, setMessages] = useState([
-    { role: 'ai', text: "I'm Eagle, your AI golf coach. I know your current hole and conditions. Ask me anything — swing tips, strategy, mental game, club selection." }
+    { role: 'ai', text: "I'm Eagle, your AI golf coach. I know your current hole, conditions and your exact club distances. Ask me anything!" }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Use real course data if available, otherwise fallback
   const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
                     selectedCourse?.course?.tees?.female?.[0]?.holes || null
-
-  const h = realHoles
-    ? realHoles[currentHole]
-    : fallbackHoles[currentHole]
-
+  const h = realHoles ? realHoles[currentHole] : fallbackHoles[currentHole]
   const courseName = selectedCourse?.course?.club_name || null
   const holeYards = realHoles ? h?.yardage : h?.yards
   const holePar = h?.par
@@ -61,6 +68,15 @@ export default function Coach({ currentHole, selectedCourse }) {
       ? `The player is on Hole ${currentHole + 1} at ${courseName} — Par ${holePar}, ${holeYards} yards, Handicap ${holeHcp}.`
       : `The player is on Hole ${currentHole + 1} — "${h?.name}" (Par ${holePar}, ${holeYards} yards, ${h?.type}).`
 
+    const distanceContext = distanceToPin
+      ? `Player's current GPS distance to the pin: ${distanceToPin} yards.`
+      : ''
+
+    const bag = loadBag()
+    const bagContext = bag
+      ? `Player's exact club distances: ${JSON.stringify(bag)}.`
+      : ''
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -68,7 +84,7 @@ export default function Coach({ currentHole, selectedCourse }) {
         body: JSON.stringify({
           model: 'claude-sonnet-4-5',
           max_tokens: 1000,
-          system: `You are Eagle, an expert PGA-level golf coach and caddie. ${holeContext} Give concise, practical, expert advice. Use proper golf terminology. Be encouraging but direct. Keep answers under 120 words.`,
+          system: `You are Eagle, an expert PGA-level golf coach and caddie. ${holeContext} ${distanceContext} ${bagContext} When recommending clubs always use the player's exact yardages. Account for wind, temperature, and conditions. Give concise, practical, expert advice under 120 words.`,
           messages: [{ role: 'user', content: userMsg }]
         })
       })
@@ -96,7 +112,23 @@ export default function Coach({ currentHole, selectedCourse }) {
             </div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
               Hole {currentHole + 1} · Par {holePar} · {holeYards} yds
+              {distanceToPin ? ` · 📍 ${distanceToPin} yds to pin` : ''}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Distance banner */}
+      {distanceToPin && !courseName && (
+        <div style={{ background: '#1a3a2a', borderRadius: 10,
+          padding: '8px 14px', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
+            textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+            📍 Distance to pin
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 700,
+            fontFamily: 'Bebas Neue', color: '#4ade80' }}>
+            {distanceToPin} yards
           </div>
         </div>
       )}
