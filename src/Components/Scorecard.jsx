@@ -7,18 +7,93 @@ const defaultHoles = [
   {par:5,yards:552,hcp:6},{par:4,yards:391,hcp:12},{par:4,yards:437,hcp:18},
 ]
 
-function getScoreColor(diff) {
-  if (diff === null) return { bg: 'transparent', color: 'var(--tx)' }
-  if (diff <= -2) return { bg: '#fef08a', color: '#854d0e' } // Eagle — yellow
-  if (diff === -1) return { bg: '#fecaca', color: '#991b1b' } // Birdie — red
-  if (diff === 0) return { bg: 'transparent', color: 'var(--tx)' } // Par — white
-  if (diff === 1) return { bg: '#dbeafe', color: '#1e40af' } // Bogey — blue
-  return { bg: '#fee2e2', color: '#991b1b' } // Double+ — darker red
+function ScoreDisplay({ score, par, size = 24 }) {
+  if (score === null) return <span>—</span>
+  const diff = score - par
+
+  const numStyle = {
+    fontSize: size * 0.5,
+    fontWeight: 600,
+    color: 'var(--tx)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  }
+
+  if (diff <= -2) {
+    // Eagle — two circles
+    return (
+      <span style={{ position: 'relative', display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center',
+        width: size + 8, height: size + 8 }}>
+        <span style={{ position: 'absolute', width: size + 8, height: size + 8,
+          borderRadius: '50%', border: '1.5px solid #111' }} />
+        <span style={{ position: 'absolute', width: size, height: size,
+          borderRadius: '50%', border: '1.5px solid #111' }} />
+        <span style={numStyle}>{score}</span>
+      </span>
+    )
+  } else if (diff === -1) {
+    // Birdie — one circle
+    return (
+      <span style={{ position: 'relative', display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center',
+        width: size, height: size }}>
+        <span style={{ position: 'absolute', width: size, height: size,
+          borderRadius: '50%', border: '1.5px solid #111' }} />
+        <span style={numStyle}>{score}</span>
+      </span>
+    )
+  } else if (diff === 0) {
+    // Par — just the number
+    return <span style={numStyle}>{score}</span>
+  } else if (diff === 1) {
+    // Bogey — one square
+    return (
+      <span style={{ position: 'relative', display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center',
+        width: size, height: size }}>
+        <span style={{ position: 'absolute', width: size, height: size,
+          border: '1.5px solid #111' }} />
+        <span style={numStyle}>{score}</span>
+      </span>
+    )
+  } else if (diff === 2) {
+    // Double bogey — two squares
+    return (
+      <span style={{ position: 'relative', display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center',
+        width: size + 8, height: size + 8 }}>
+        <span style={{ position: 'absolute', width: size + 8, height: size + 8,
+          border: '1.5px solid #111' }} />
+        <span style={{ position: 'absolute', width: size, height: size,
+          border: '1.5px solid #111' }} />
+        <span style={numStyle}>{score}</span>
+      </span>
+    )
+  } else {
+    // Triple+ — just the number
+    return <span style={numStyle}>{score}</span>
+  }
+}
+
+function getPlusMinus(diff) {
+  if (diff === null) return '—'
+  if (diff === 0) return 'E'
+  if (diff > 0) return '+' + diff
+  return diff
+}
+
+function getPlusMinusColor(diff) {
+  if (diff === null) return 'var(--tx2)'
+  if (diff < 0) return '#166534'
+  if (diff > 0) return '#991b1b'
+  return 'var(--tx2)'
 }
 
 export default function Scorecard({ scores, setScores, currentHole, setCurrentHole, selectedCourse }) {
 
-  // Use real course data if available
   const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
                     selectedCourse?.course?.tees?.female?.[0]?.holes || null
   const holes = realHoles
@@ -31,7 +106,6 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
   const totalPar = holes.slice(0, played.length).reduce((a, h) => a + h.par, 0)
   const diff = totalStrokes - totalPar
 
-  // Front 9 / Back 9
   const front9Strokes = scores.slice(0, 9).reduce((a, b) => b !== null ? a + b : a, 0)
   const front9Par = holes.slice(0, 9).reduce((a, h) => a + h.par, 0)
   const front9Played = scores.slice(0, 9).filter(s => s !== null).length
@@ -47,7 +121,6 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
   }
 
   function setPutts(val) {
-    // Store putts in a separate array via localStorage
     try {
       const stored = JSON.parse(localStorage.getItem('putts') || '[]')
       stored[currentHole] = val
@@ -71,10 +144,6 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
     { label: '+3', val: h.par + 3 },
   ].filter(o => o.val > 0)
 
-  const currentDiff = scores[currentHole] !== null
-    ? scores[currentHole] - h.par : null
-  const currentColors = getScoreColor(currentDiff)
-
   return (
     <div style={{ padding: 16 }}>
 
@@ -92,9 +161,8 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
         {[
           { label: 'Strokes', val: played.length > 0 ? totalStrokes : '—',
             color: 'var(--tx)' },
-          { label: 'vs Par', val: played.length > 0
-            ? (diff === 0 ? 'E' : diff > 0 ? '+' + diff : diff) : '—',
-            color: diff < 0 ? '#166534' : diff > 0 ? '#dc2626' : 'var(--tx)' },
+          { label: 'vs Par', val: played.length > 0 ? getPlusMinus(diff) : '—',
+            color: getPlusMinusColor(played.length > 0 ? diff : null) },
           { label: 'Holes', val: played.length + '/18', color: 'var(--tx)' },
         ].map(s => (
           <div key={s.label} style={{ background: 'var(--bg2)', borderRadius: 10,
@@ -117,11 +185,8 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
             Hole {currentHole + 1} — Par {h.par}
           </div>
           {scores[currentHole] !== null && (
-            <div style={{ background: currentColors.bg,
-              color: currentColors.color,
-              padding: '2px 10px', borderRadius: 20,
-              fontSize: 12, fontWeight: 600 }}>
-              {scoreOptions.find(o => o.val === scores[currentHole])?.label || scores[currentHole]}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ScoreDisplay score={scores[currentHole]} par={h.par} size={28} />
             </div>
           )}
         </div>
@@ -130,22 +195,20 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
         </div>
 
         {/* Score buttons */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
+          gap: 8, marginBottom: 12 }}>
           {scoreOptions.map(o => {
-            const optDiff = o.val - h.par
-            const colors = getScoreColor(optDiff)
             const selected = scores[currentHole] === o.val
             return (
               <button key={o.val} onClick={() => setScore(o.val)}
                 style={{ border: selected ? '2px solid var(--g3)' : '1px solid var(--bd)',
                   borderRadius: 10,
-                  background: selected ? colors.bg : '#fff',
+                  background: selected ? 'rgba(45,138,84,0.1)' : '#fff',
                   padding: '10px 6px', cursor: 'pointer', textAlign: 'center' }}>
-                <div style={{ fontSize: 11, color: selected ? colors.color : 'var(--tx2)',
-                  textTransform: 'uppercase' }}>{o.label}</div>
-                <div style={{ fontSize: 20, fontWeight: 600, marginTop: 2,
-                  color: selected ? colors.color : 'var(--tx)' }}>
-                  {o.val}
+                <div style={{ fontSize: 11, color: 'var(--tx2)',
+                  textTransform: 'uppercase', marginBottom: 6 }}>{o.label}</div>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <ScoreDisplay score={o.val} par={h.par} size={24} />
                 </div>
               </button>
             )
@@ -205,7 +268,6 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
             {holes.slice(0, 9).map((h, i) => {
               const s = scores[i]
               const d = s !== null ? s - h.par : null
-              const colors = getScoreColor(d)
               return (
                 <tr key={i} onClick={() => setCurrentHole(i)}
                   style={{ background: i === currentHole
@@ -216,26 +278,17 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
                   <td style={{ padding: '7px 4px', textAlign: 'center' }}>{h.par}</td>
                   <td style={{ padding: '7px 4px', textAlign: 'center' }}>{h.yards}</td>
                   <td style={{ padding: '7px 4px', textAlign: 'center' }}>
-                    {s !== null ? (
-                      <span style={{ width: 24, height: 24, borderRadius: '50%',
-                        display: 'inline-flex', alignItems: 'center',
-                        justifyContent: 'center', fontSize: 11, fontWeight: 600,
-                        background: colors.bg, color: colors.color,
-                        border: d <= -2 ? '2px solid #eab308' : d === -1 ? '2px solid #dc2626' : 'none' }}>
-                        {s}
-                      </span>
-                    ) : '—'}
+                    <ScoreDisplay score={s} par={h.par} size={22} />
                   </td>
                   <td style={{ padding: '7px 4px', textAlign: 'center',
-                    fontSize: 11, fontWeight: 600, color: d === null ? 'var(--tx2)'
-                      : d < 0 ? '#166534' : d > 0 ? '#991b1b' : 'var(--tx2)' }}>
-                    {d === null ? '—' : d === 0 ? 'E' : d > 0 ? '+' + d : d}
+                    fontSize: 11, fontWeight: 600, color: getPlusMinusColor(d) }}>
+                    {getPlusMinus(d)}
                   </td>
                 </tr>
               )
             })}
 
-            {/* Front 9 subtotal */}
+            {/* Front 9 OUT subtotal */}
             <tr style={{ background: 'rgba(45,138,84,0.08)',
               borderTop: '2px solid var(--g3)', borderBottom: '2px solid var(--g3)' }}>
               <td colSpan={2} style={{ padding: '6px 4px', textAlign: 'center',
@@ -248,14 +301,8 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
               </td>
               <td style={{ padding: '6px 4px', textAlign: 'center',
                 fontWeight: 700, fontSize: 11,
-                color: front9Strokes - front9Par < 0 ? '#166534'
-                  : front9Strokes - front9Par > 0 ? '#991b1b' : 'var(--tx)' }}>
-                {front9Played > 0
-                  ? (front9Strokes - front9Par === 0 ? 'E'
-                    : front9Strokes - front9Par > 0
-                      ? '+' + (front9Strokes - front9Par)
-                      : front9Strokes - front9Par)
-                  : '—'}
+                color: getPlusMinusColor(front9Played > 0 ? front9Strokes - front9Par : null) }}>
+                {front9Played > 0 ? getPlusMinus(front9Strokes - front9Par) : '—'}
               </td>
             </tr>
 
@@ -264,7 +311,6 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
               const idx = i + 9
               const s = scores[idx]
               const d = s !== null ? s - h.par : null
-              const colors = getScoreColor(d)
               return (
                 <tr key={idx} onClick={() => setCurrentHole(idx)}
                   style={{ background: idx === currentHole
@@ -275,26 +321,17 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
                   <td style={{ padding: '7px 4px', textAlign: 'center' }}>{h.par}</td>
                   <td style={{ padding: '7px 4px', textAlign: 'center' }}>{h.yards}</td>
                   <td style={{ padding: '7px 4px', textAlign: 'center' }}>
-                    {s !== null ? (
-                      <span style={{ width: 24, height: 24, borderRadius: '50%',
-                        display: 'inline-flex', alignItems: 'center',
-                        justifyContent: 'center', fontSize: 11, fontWeight: 600,
-                        background: colors.bg, color: colors.color,
-                        border: d <= -2 ? '2px solid #eab308' : d === -1 ? '2px solid #dc2626' : 'none' }}>
-                        {s}
-                      </span>
-                    ) : '—'}
+                    <ScoreDisplay score={s} par={h.par} size={22} />
                   </td>
                   <td style={{ padding: '7px 4px', textAlign: 'center',
-                    fontSize: 11, fontWeight: 600, color: d === null ? 'var(--tx2)'
-                      : d < 0 ? '#166534' : d > 0 ? '#991b1b' : 'var(--tx2)' }}>
-                    {d === null ? '—' : d === 0 ? 'E' : d > 0 ? '+' + d : d}
+                    fontSize: 11, fontWeight: 600, color: getPlusMinusColor(d) }}>
+                    {getPlusMinus(d)}
                   </td>
                 </tr>
               )
             })}
 
-            {/* Back 9 subtotal */}
+            {/* Back 9 IN subtotal */}
             <tr style={{ background: 'rgba(45,138,84,0.08)',
               borderTop: '2px solid var(--g3)', borderBottom: '2px solid var(--g3)' }}>
               <td colSpan={2} style={{ padding: '6px 4px', textAlign: 'center',
@@ -307,14 +344,8 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
               </td>
               <td style={{ padding: '6px 4px', textAlign: 'center',
                 fontWeight: 700, fontSize: 11,
-                color: back9Strokes - back9Par < 0 ? '#166534'
-                  : back9Strokes - back9Par > 0 ? '#991b1b' : 'var(--tx)' }}>
-                {back9Played > 0
-                  ? (back9Strokes - back9Par === 0 ? 'E'
-                    : back9Strokes - back9Par > 0
-                      ? '+' + (back9Strokes - back9Par)
-                      : back9Strokes - back9Par)
-                  : '—'}
+                color: getPlusMinusColor(back9Played > 0 ? back9Strokes - back9Par : null) }}>
+                {back9Played > 0 ? getPlusMinus(back9Strokes - back9Par) : '—'}
               </td>
             </tr>
 
@@ -333,9 +364,7 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
               <td style={{ padding: '8px 4px', textAlign: 'center',
                 fontWeight: 700, fontSize: 12,
                 color: diff < 0 ? '#4ade80' : diff > 0 ? '#fca5a5' : '#fff' }}>
-                {played.length > 0
-                  ? (diff === 0 ? 'E' : diff > 0 ? '+' + diff : diff)
-                  : '—'}
+                {played.length > 0 ? getPlusMinus(diff) : '—'}
               </td>
             </tr>
           </tbody>
