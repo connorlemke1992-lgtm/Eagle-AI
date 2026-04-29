@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const holes = [
   {par:4,yards:412,hcp:7,name:"The Opener",type:"Dogleg Right"},
@@ -95,7 +95,12 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 1000,
@@ -109,6 +114,10 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
     }
     setAdviceLoading(false)
   }
+
+  useEffect(() => {
+    if (weather) generateAdvice(weather)
+  }, [currentHole])
 
   const ranked = Object.entries(bag)
     .map(([name, dist]) => ({ name, dist, diff: Math.abs(dist - h.yards) }))
@@ -203,7 +212,8 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
                 ↻ Refresh
               </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)',
+              gap: 8 }}>
               {[
                 { icon: '💨', label: 'Wind', val: weather.windSpeed + ' mph' },
                 { icon: '🧭', label: 'From', val: weather.windDir },
@@ -246,7 +256,8 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
           </div>
 
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
-            textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+            textTransform: 'uppercase', letterSpacing: '0.07em',
+            marginBottom: 8 }}>
             Clubs for this hole
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
