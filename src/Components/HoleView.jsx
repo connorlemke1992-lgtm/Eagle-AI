@@ -32,6 +32,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
   const measureLineRef = useRef(null)
   const infoWindowRef = useRef(null)
   const measureStartRef = useRef(null)
+  const pinPulseRef = useRef(null)
   const [tapDist, setTapDist] = useState(null)
   const [tapClub, setTapClub] = useState(null)
   const [courseData, setCourseData] = useState(() => {
@@ -40,10 +41,23 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
       return stored ? JSON.parse(stored) : null
     } catch { return null }
   })
+  const [showPinPrompt, setShowPinPrompt] = useState(false)
+  const [visitedHoles, setVisitedHoles] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('visited_holes') || '[]')
+    } catch { return [] }
+  })
 
   const holes = courseData?.course?.tees?.male?.[0]?.holes ||
                 courseData?.course?.tees?.female?.[0]?.holes || []
   const h = holes[currentHole]
+
+  useEffect(() => {
+    if (!courseData) return
+    if (!visitedHoles.includes(currentHole)) {
+      setShowPinPrompt(true)
+    }
+  }, [currentHole])
 
   useEffect(() => {
     if (playerMarkerRef.current && playerPos) {
@@ -78,13 +92,70 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
     const lat = courseData?.course?.location?.latitude
     const lng = courseData?.course?.location?.longitude
     if (lat && lng) {
-      const offset = 0.0008
       return {
-        lat: lat + (Math.sin(holeIndex * 1.2) * offset),
-        lng: lng + (Math.cos(holeIndex * 1.2) * offset)
+        lat: lat + (Math.sin(holeIndex * 1.2) * 0.0008),
+        lng: lng + (Math.cos(holeIndex * 1.2) * 0.0008)
       }
     }
     return { lat: 36.5686, lng: -121.9505 }
+  }
+
+  function getPinOffset(position, holeIndex) {
+    const coords = getHoleCoords(holeIndex)
+    const offsets = {
+      front: { lat: coords.lat - 0.0001, lng: coords.lng },
+      middle: { lat: coords.lat, lng: coords.lng },
+      back: { lat: coords.lat + 0.0001, lng: coords.lng },
+    }
+    return offsets[position] || coords
+  }
+
+  function selectPinPosition(position) {
+    const coords = getPinOffset(position, currentHole)
+    setPinPos(coords)
+    if (pinMarkerRef.current) {
+      pinMarkerRef.current.setPosition(coords)
+    }
+    const updated = [...new Set([...visitedHoles, currentHole])]
+    setVisitedHoles(updated)
+    localStorage.setItem('visited_holes', JSON.stringify(updated))
+    setShowPinPrompt(false)
+  }
+
+  function dismissPrompt() {
+    const updated = [...new Set([...visitedHoles, currentHole])]
+    setVisitedHoles(updated)
+    localStorage.setItem('visited_holes', JSON.stringify(updated))
+    setShowPinPrompt(false)
+  }
+
+  function startPinPulse() {
+    if (!pinMarkerRef.current || !mapInstanceRef.current) return
+    let scale = 10
+    let growing = true
+    let count = 0
+    if (pinPulseRef.current) clearInterval(pinPulseRef.current)
+    const interval = setInterval(() => {
+      if (count > 20) {
+        clearInterval(interval)
+        pinMarkerRef.current?.setIcon({
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 10, fillColor: '#4ade80', fillOpacity: 1,
+          strokeColor: '#fff', strokeWeight: 2,
+        })
+        return
+      }
+      scale = growing ? scale + 1 : scale - 1
+      if (scale >= 16) growing = false
+      if (scale <= 10) { growing = true; count++ }
+      pinMarkerRef.current?.setIcon({
+        path: window.google.maps.SymbolPath.CIRCLE,
+        scale, fillColor: '#4ade80',
+        fillOpacity: growing ? 0.8 : 1,
+        strokeColor: '#fff', strokeWeight: 2,
+      })
+    }, 100)
+    pinPulseRef.current = interval
   }
 
   function loadGoogleMaps() {
@@ -115,7 +186,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
     infoWindowRef.current = new window.google.maps.InfoWindow()
     placeHoleMarkers(map)
     addMapClickListener(map)
-
     if (playerPos) {
       playerMarkerRef.current = new window.google.maps.Marker({
         position: playerPos, map,
@@ -158,6 +228,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
     pinMarkerRef.current.addListener('dragend', (e) => {
       setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
     })
+    setTimeout(() => startPinPulse(), 500)
   }
 
   function addMapClickListener(map) {
@@ -240,6 +311,8 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
       <CourseSearch onCourseSelect={(data) => {
         setCourseData(data)
         onCourseSelect(data)
+        setVisitedHoles([])
+        localStorage.removeItem('visited_holes')
         mapInstanceRef.current = null
       }} />
     )
@@ -247,6 +320,47 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
 
   return (
     <div style={{ padding: 16 }}>
+
+      {/* Pin placement prompt */}
+      {showPinPrompt && (
+        <div style={{ background: 'var(--g1)', borderRadius: 14,
+          padding: 16, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+            📍 Where is the pin on Hole {currentHole + 1}?
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 14 }}>
+            Select a position or drag the 🟢 pin on the map for exact placement
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
+            gap: 8, marginBottom: 10 }}>
+            {[
+              { label: 'Front', icon: '⬆️', desc: 'Front of green' },
+              { label: 'Middle', icon: '🎯', desc: 'Center of green' },
+              { label: 'Back', icon: '⬇️', desc: 'Back of green' },
+            ].map(p => (
+              <button key={p.label} onClick={() => selectPinPosition(p.label.toLowerCase())}
+                style={{ background: 'rgba(255,255,255,0.1)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: 10, padding: '10px 6px', cursor: 'pointer',
+                  textAlign: 'center', color: '#fff' }}>
+                <div style={{ fontSize: 20, marginBottom: 4 }}>{p.icon}</div>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>{p.label}</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)',
+                  marginTop: 2 }}>{p.desc}</div>
+              </button>
+            ))}
+          </div>
+          <button onClick={dismissPrompt}
+            style={{ width: '100%', background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8,
+              padding: '8px', cursor: 'pointer',
+              color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+            Skip — I'll drag the pin manually
+          </button>
+        </div>
+      )}
+
+      {/* Course header */}
       <div style={{ display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
@@ -269,6 +383,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
         </button>
       </div>
 
+      {/* Live distance banner */}
       {distanceToPin && (
         <div style={{ background: 'var(--g1)', borderRadius: 10,
           padding: '10px 14px', marginBottom: 12,
@@ -288,6 +403,28 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
         </div>
       )}
 
+      {/* Move Pin button */}
+      <button onClick={() => setShowPinPrompt(true)}
+        style={{ width: '100%', background: '#fff',
+          border: '1px solid var(--bd)', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          cursor: 'pointer' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>🟢</span>
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>
+              Move Pin
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
+              Change today's flag position
+            </div>
+          </div>
+        </div>
+        <span style={{ fontSize: 16, color: 'var(--tx2)' }}>→</span>
+      </button>
+
+      {/* Hole nav */}
       <div style={{ display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', marginBottom: 10 }}>
         <button onClick={() => setCurrentHole(Math.max(0, currentHole - 1))}
@@ -313,7 +450,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
       <div style={{ background: 'var(--bg2)', borderRadius: 8,
         padding: '8px 12px', fontSize: 12, color: 'var(--tx2)',
         marginBottom: 10, textAlign: 'center' }}>
-        👆 Tap 1 = start · Tap 2 = target · Drag 🟢 to move pin · 🔵 = you
+        👆 Tap 1 = start · Tap 2 = target · Drag 🟢 pin to move flag · 🔵 = you
       </div>
 
       <div ref={mapRef}
