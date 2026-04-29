@@ -10,19 +10,35 @@ function haversineYards(lat1, lon1, lat2, lon2) {
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1.094)
 }
 
-const bag = {
-  "Driver":265,"3 Wood":235,"5 Wood":215,"Hybrid":200,
-  "4 Iron":190,"5 Iron":177,"6 Iron":164,"7 Iron":151,
-  "8 Iron":138,"9 Iron":124,"PW":112,"GW":98,"SW":82,"LW":65
+function loadBag() {
+  try {
+    const stored = localStorage.getItem('my_bag')
+    if (stored) {
+      const arr = JSON.parse(stored)
+      return arr.map(c => ({ name: c.name, yards: c.yards }))
+    }
+  } catch {}
+  return [
+    { name: 'Driver', yards: 265 }, { name: '3 Wood', yards: 235 },
+    { name: '5 Wood', yards: 215 }, { name: 'Hybrid', yards: 200 },
+    { name: '4 Iron', yards: 190 }, { name: '5 Iron', yards: 177 },
+    { name: '6 Iron', yards: 164 }, { name: '7 Iron', yards: 151 },
+    { name: '8 Iron', yards: 138 }, { name: '9 Iron', yards: 124 },
+    { name: 'PW', yards: 112 }, { name: 'GW', yards: 98 },
+    { name: 'SW', yards: 82 }, { name: 'LW', yards: 65 },
+  ]
 }
 
-function bestClub(yards) {
-  return Object.entries(bag)
-    .map(([n,d]) => ({n, d, diff: Math.abs(d-yards)}))
-    .sort((a,b) => a.diff-b.diff)[0]
+function bestClub(yards, bag) {
+  return bag.reduce((best, club) =>
+    Math.abs(club.yards - yards) < Math.abs(best.yards - yards) ? club : best
+  )
 }
 
-export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, playerPos, pinPos, setPinPos, distanceToPin, showSearch, setShowSearch }) {
+export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
+  playerPos, pinPos, setPinPos, distanceToPin, showSearch, setShowSearch,
+  shotHistory, addShot }) {
+
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const pinMarkerRef = useRef(null)
@@ -30,9 +46,12 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
   const playerMarkerRef = useRef(null)
   const measureMarkersRef = useRef([])
   const measureLineRef = useRef(null)
+  const shotLinesRef = useRef([])
+  const shotMarkersRef = useRef([])
   const infoWindowRef = useRef(null)
   const measureStartRef = useRef(null)
   const pinPulseRef = useRef(null)
+
   const [tapDist, setTapDist] = useState(null)
   const [tapClub, setTapClub] = useState(null)
   const [courseData, setCourseData] = useState(() => {
@@ -48,9 +67,20 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
     } catch { return [] }
   })
 
+  // Shot tracking state
+  const [shotMode, setShotMode] = useState('idle') // idle | waiting_for_ball
+  const [shotStart, setShotStart] = useState(null)
+  const [pendingShot, setPendingShot] = useState(null)
+  const [showClubPicker, setShowClubPicker] = useState(false)
+  const [showShotHistory, setShowShotHistory] = useState(false)
+  const [eagleAnalysis, setEagleAnalysis] = useState('')
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const bag = loadBag()
+
   const holes = courseData?.course?.tees?.male?.[0]?.holes ||
                 courseData?.course?.tees?.female?.[0]?.holes || []
   const h = holes[currentHole]
+  const holeShots = shotHistory.filter(s => s.hole === currentHole + 1)
 
   useEffect(() => {
     if (!courseData) return
@@ -88,6 +118,13 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
     }
   }, [currentHole])
 
+  // Redraw shot lines when shot history changes
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      drawShotLines()
+    }
+  }, [shotHistory, currentHole])
+
   function getHoleCoords(holeIndex) {
     const lat = courseData?.course?.location?.latitude
     const lng = courseData?.course?.location?.longitude
@@ -102,20 +139,17 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
 
   function getPinOffset(position, holeIndex) {
     const coords = getHoleCoords(holeIndex)
-    const offsets = {
+    return {
       front: { lat: coords.lat - 0.0001, lng: coords.lng },
       middle: { lat: coords.lat, lng: coords.lng },
       back: { lat: coords.lat + 0.0001, lng: coords.lng },
-    }
-    return offsets[position] || coords
+    }[position] || coords
   }
 
   function selectPinPosition(position) {
     const coords = getPinOffset(position, currentHole)
     setPinPos(coords)
-    if (pinMarkerRef.current) {
-      pinMarkerRef.current.setPosition(coords)
-    }
+    if (pinMarkerRef.current) pinMarkerRef.current.setPosition(coords)
     const updated = [...new Set([...visitedHoles, currentHole])]
     setVisitedHoles(updated)
     localStorage.setItem('visited_holes', JSON.stringify(updated))
@@ -158,6 +192,124 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
     pinPulseRef.current = interval
   }
 
+  function drawShotLines() {
+    // Clear existing shot lines
+    shotLinesRef.current.forEach(l => l.setMap(null))
+    shotMarkersRef.current.forEach(m => m.setMap(null))
+    shotLinesRef.current = []
+    shotMarkersRef.current = []
+
+    // Draw lines for current hole shots
+    holeShots.forEach((shot, i) => {
+      if (!shot.start || !shot.end) return
+      const line = new window.google.maps.Polyline({
+        path: [shot.start, shot.end],
+        geodesic: true,
+        strokeColor: '#f59e0b',
+        strokeOpacity: 0.9,
+        strokeWeight: 3,
+        map: mapInstanceRef.current,
+      })
+      shotLinesRef.current.push(line)
+
+      // Start marker
+      const startM = new window.google.maps.Marker({
+        position: shot.start,
+        map: mapInstanceRef.current,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 7, fillColor: '#f59e0b', fillOpacity: 1,
+          strokeColor: '#fff', strokeWeight: 2,
+        },
+        label: { text: String(i + 1), color: '#fff', fontSize: '9px', fontWeight: 'bold' }
+      })
+      shotMarkersRef.current.push(startM)
+
+      // End marker
+      const endM = new window.google.maps.Marker({
+        position: shot.end,
+        map: mapInstanceRef.current,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 7, fillColor: '#ef4444', fillOpacity: 1,
+          strokeColor: '#fff', strokeWeight: 2,
+        }
+      })
+      shotMarkersRef.current.push(endM)
+    })
+  }
+
+  // Shot tracking functions
+  function handleIJustHit() {
+    if (!playerPos) {
+      alert('GPS not available — make sure location is enabled')
+      return
+    }
+    setShotStart({ ...playerPos })
+    setShotMode('waiting_for_ball')
+  }
+
+  function handleBallIsHere() {
+    if (!playerPos || !shotStart) return
+    const dist = haversineYards(
+      shotStart.lat, shotStart.lng,
+      playerPos.lat, playerPos.lng
+    )
+    const suggested = bestClub(dist, bag)
+    setPendingShot({
+      hole: currentHole + 1,
+      start: shotStart,
+      end: { ...playerPos },
+      distance: dist,
+      suggestedClub: suggested.name,
+      club: suggested.name,
+      timestamp: new Date().toISOString(),
+    })
+    setShotMode('idle')
+    setShotStart(null)
+    setShowClubPicker(true)
+  }
+
+  function cancelShot() {
+    setShotMode('idle')
+    setShotStart(null)
+  }
+
+  async function confirmShot(clubName) {
+    const shot = { ...pendingShot, club: clubName }
+    addShot(shot)
+    setShowClubPicker(false)
+    setPendingShot(null)
+    await analyzeShot(shot)
+  }
+
+  async function analyzeShot(shot) {
+    setAnalysisLoading(true)
+    setEagleAnalysis('')
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 150,
+          messages: [{
+            role: 'user',
+            content: `You are Eagle, an elite golf caddie. Give a 1-2 sentence reaction to this shot:
+Hole ${shot.hole}, hit ${shot.club} for ${shot.distance} yards.
+Stock distance for ${shot.club}: ${bag.find(b => b.name === shot.club)?.yards || '?'} yards.
+Was this a good strike? Any quick tip for the next shot? Plain text only, no markdown.`
+          }]
+        })
+      })
+      const data = await res.json()
+      setEagleAnalysis(data.content?.[0]?.text || '')
+    } catch {
+      setEagleAnalysis('')
+    }
+    setAnalysisLoading(false)
+  }
+
   function loadGoogleMaps() {
     if (window.google?.maps) { initMap(); return }
     const existing = document.querySelector('script[src*="maps.googleapis.com"]')
@@ -173,14 +325,9 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
     if (!mapRef.current) return
     const coords = getHoleCoords(currentHole)
     const map = new window.google.maps.Map(mapRef.current, {
-      center: coords,
-      zoom: 17,
-      mapTypeId: 'satellite',
-      tilt: 0,
-      zoomControl: true,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: true,
+      center: coords, zoom: 17, mapTypeId: 'satellite', tilt: 0,
+      zoomControl: true, mapTypeControl: false,
+      streetViewControl: false, fullscreenControl: true,
     })
     mapInstanceRef.current = map
     infoWindowRef.current = new window.google.maps.InfoWindow()
@@ -197,16 +344,15 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
         title: 'You'
       })
     }
+    drawShotLines()
   }
 
   function placeHoleMarkers(map) {
     if (pinMarkerRef.current) pinMarkerRef.current.setMap(null)
     if (teeMarkerRef.current) teeMarkerRef.current.setMap(null)
     const coords = getHoleCoords(currentHole)
-    const teeLat = coords.lat + 0.0003
-    const teeLng = coords.lng + 0.0003
     teeMarkerRef.current = new window.google.maps.Marker({
-      position: { lat: teeLat, lng: teeLng }, map,
+      position: { lat: coords.lat + 0.0003, lng: coords.lng + 0.0003 }, map,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
         scale: 10, fillColor: '#ffffff', fillOpacity: 1,
@@ -259,7 +405,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
           measureStartRef.current.lat(), measureStartRef.current.lng(),
           e.latLng.lat(), e.latLng.lng()
         )
-        const club = bestClub(dist)
+        const club = bestClub(dist, bag)
         if (measureLineRef.current) measureLineRef.current.setMap(null)
         measureLineRef.current = new window.google.maps.Polyline({
           path: [measureStartRef.current, e.latLng],
@@ -279,7 +425,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
           <div style="font-family:Inter,sans-serif;padding:4px;min-width:150px">
             <div style="font-size:20px;font-weight:700;color:#111">${dist} yards</div>
             <div style="font-size:13px;color:#1a5c33;font-weight:600;margin-top:2px">
-              Hit ${club.n} (${club.d}y club)
+              Hit ${club.name} (${club.yards}y club)
             </div>
             <div style="font-size:11px;color:#888;margin-top:4px">Tap anywhere to measure again</div>
           </div>
@@ -304,6 +450,9 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
     setTapDist(null)
     setTapClub(null)
     measureStartRef.current = null
+    setShotMode('idle')
+    setShotStart(null)
+    drawShotLines()
   }
 
   if (showSearch) {
@@ -360,6 +509,187 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
         </div>
       )}
 
+      {/* Club picker modal */}
+      {showClubPicker && pendingShot && (
+        <div style={{ background: 'var(--g1)', borderRadius: 14,
+          padding: 16, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+            🏌️ Shot logged — {pendingShot.distance} yards
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 12 }}>
+            Was that your {pendingShot.suggestedClub}? ({bag.find(b => b.name === pendingShot.suggestedClub)?.yards}y club)
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <button onClick={() => confirmShot(pendingShot.suggestedClub)}
+              style={{ flex: 1, background: '#4ade80', border: 'none',
+                borderRadius: 10, padding: '12px', cursor: 'pointer',
+                fontWeight: 700, fontSize: 14, color: '#1a3a2a' }}>
+              ✅ Yes, {pendingShot.suggestedClub}
+            </button>
+            <button onClick={() => setPendingShot(p => ({ ...p, showAllClubs: true }))}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.1)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: 10, padding: '12px', cursor: 'pointer',
+                fontWeight: 600, fontSize: 13, color: '#fff' }}>
+              ✏️ Change
+            </button>
+          </div>
+          {pendingShot.showAllClubs && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
+              gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+              {bag.map(c => (
+                <button key={c.name} onClick={() => confirmShot(c.name)}
+                  style={{ background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: 8, padding: '8px 4px', cursor: 'pointer',
+                    textAlign: 'center', color: '#fff' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>{c.name}</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>{c.yards}y</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Eagle shot analysis */}
+      {(eagleAnalysis || analysisLoading) && (
+        <div style={{ background: 'var(--g1)', borderRadius: 12,
+          padding: 14, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%',
+              background: 'var(--g3)', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 14 }}>🎯</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)',
+              textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Eagle AI · Shot Analysis
+            </div>
+          </div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.9)', lineHeight: 1.6 }}>
+            {analysisLoading ? '...' : eagleAnalysis}
+          </div>
+          <button onClick={() => setEagleAnalysis('')}
+            style={{ marginTop: 8, background: 'transparent', border: 'none',
+              color: 'rgba(255,255,255,0.3)', fontSize: 11, cursor: 'pointer' }}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Shot tracking buttons */}
+      <div style={{ display: 'grid',
+        gridTemplateColumns: shotMode === 'waiting_for_ball' ? '1fr 1fr' : '1fr',
+        gap: 8, marginBottom: 12 }}>
+        {shotMode === 'idle' && (
+          <button onClick={handleIJustHit}
+            style={{ background: 'var(--g1)', border: 'none',
+              borderRadius: 10, padding: '12px 14px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              color: '#fff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 20 }}>🏌️</span>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>I Just Hit</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                  Tap to mark shot start
+                </div>
+              </div>
+            </div>
+            <span style={{ fontSize: 16 }}>→</span>
+          </button>
+        )}
+        {shotMode === 'waiting_for_ball' && (
+          <>
+            <button onClick={handleBallIsHere}
+              style={{ background: '#4ade80', border: 'none',
+                borderRadius: 10, padding: '12px 14px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                gap: 8, color: '#1a3a2a', fontWeight: 700, fontSize: 13 }}>
+              <span style={{ fontSize: 20 }}>📍</span>
+              Ball is Here
+            </button>
+            <button onClick={cancelShot}
+              style={{ background: '#fee2e2', border: 'none',
+                borderRadius: 10, padding: '12px 14px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                gap: 8, color: '#991b1b', fontWeight: 600, fontSize: 13 }}>
+              ✕ Cancel
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Waiting indicator */}
+      {shotMode === 'waiting_for_ball' && (
+        <div style={{ background: '#fef3c7', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 12, textAlign: 'center' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#92400e' }}>
+            🟡 Shot start marked — walk to your ball then tap "Ball is Here"
+          </div>
+        </div>
+      )}
+
+      {/* Shot history for this hole */}
+      {holeShots.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <button onClick={() => setShowShotHistory(!showShotHistory)}
+            style={{ width: '100%', background: '#fff',
+              border: '1px solid var(--bd)', borderRadius: 10,
+              padding: '10px 14px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 18 }}>📊</span>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>
+                  Shot History — Hole {currentHole + 1}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
+                  {holeShots.length} shot{holeShots.length !== 1 ? 's' : ''} tracked
+                </div>
+              </div>
+            </div>
+            <span style={{ fontSize: 16, color: 'var(--tx2)' }}>
+              {showShotHistory ? '▲' : '▼'}
+            </span>
+          </button>
+
+          {showShotHistory && (
+            <div style={{ background: '#fff', border: '1px solid var(--bd)',
+              borderRadius: 10, marginTop: 6, overflow: 'hidden' }}>
+              {holeShots.map((shot, i) => (
+                <div key={i} style={{ padding: '10px 14px',
+                  borderBottom: i < holeShots.length - 1 ? '1px solid var(--bd)' : 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: '50%',
+                      background: 'var(--g1)', display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', fontSize: 11, color: '#fff',
+                      fontWeight: 700 }}>{i + 1}</div>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{shot.club}</div>
+                      <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
+                        {shot.distance} yards
+                        {bag.find(b => b.name === shot.club) && (
+                          <span style={{ marginLeft: 6,
+                            color: shot.distance >= bag.find(b => b.name === shot.club).yards * 0.95
+                              ? '#166534' : '#991b1b' }}>
+                            ({shot.distance >= bag.find(b => b.name === shot.club).yards * 0.95
+                              ? 'Solid' : 'Short'})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
+                    Shot {i + 1}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Course header */}
       <div style={{ display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', marginBottom: 12 }}>
@@ -371,11 +701,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
             📍 {courseData?.course?.location?.city}, {courseData?.course?.location?.state}
           </div>
         </div>
-        <button onClick={() => {
-          onCourseSelect(null)
-          setCourseData(null)
-          mapInstanceRef.current = null
-        }}
+        <button onClick={() => { onCourseSelect(null); setCourseData(null); mapInstanceRef.current = null }}
           style={{ border: '1px solid var(--bd)', borderRadius: 8,
             background: '#fff', padding: '6px 12px',
             fontSize: 12, cursor: 'pointer', color: 'var(--tx)' }}>
@@ -383,14 +709,13 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
         </button>
       </div>
 
-      {/* Live distance banner */}
+      {/* Live distance */}
       {distanceToPin && (
         <div style={{ background: 'var(--g1)', borderRadius: 10,
           padding: '10px 14px', marginBottom: 12,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%',
-              background: '#4ade80' }} />
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80' }} />
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)',
               textTransform: 'uppercase', letterSpacing: '0.07em' }}>
               Live distance to pin
@@ -413,12 +738,8 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 18 }}>🟢</span>
           <div style={{ textAlign: 'left' }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>
-              Move Pin
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
-              Change today's flag position
-            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>Move Pin</div>
+            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>Change today's flag position</div>
           </div>
         </div>
         <span style={{ fontSize: 16, color: 'var(--tx2)' }}>→</span>
@@ -433,9 +754,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
             background: '#fff', padding: '6px 14px', cursor: 'pointer',
             opacity: currentHole === 0 ? 0.3 : 1 }}>← Prev</button>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: 'Bebas Neue', fontSize: 20 }}>
-            Hole {currentHole + 1}
-          </div>
+          <div style={{ fontFamily: 'Bebas Neue', fontSize: 20 }}>Hole {currentHole + 1}</div>
           <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
             Par {h?.par} · {h?.yardage} yds · Hcp {h?.handicap}
           </div>
@@ -450,13 +769,12 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
       <div style={{ background: 'var(--bg2)', borderRadius: 8,
         padding: '8px 12px', fontSize: 12, color: 'var(--tx2)',
         marginBottom: 10, textAlign: 'center' }}>
-        👆 Tap 1 = start · Tap 2 = target · Drag 🟢 pin to move flag · 🔵 = you
+        👆 Tap 1 = start · Tap 2 = target · Drag 🟢 pin · 🔵 = you · 🟡 = shots
       </div>
 
       <div ref={mapRef}
         style={{ width: '100%', height: 380, borderRadius: 12,
-          overflow: 'hidden', marginBottom: 12,
-          border: '1px solid var(--bd)' }} />
+          overflow: 'hidden', marginBottom: 12, border: '1px solid var(--bd)' }} />
 
       {tapDist && (
         <div style={{ background: 'var(--g1)', borderRadius: 12,
@@ -472,8 +790,8 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)',
               textTransform: 'uppercase', letterSpacing: '0.07em' }}>Club</div>
             <div style={{ fontSize: 28, fontWeight: 700,
-              fontFamily: 'Bebas Neue', color: '#4ade80' }}>{tapClub?.n}</div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>{tapClub?.d}y club</div>
+              fontFamily: 'Bebas Neue', color: '#4ade80' }}>{tapClub?.name}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>{tapClub?.yards}y club</div>
           </div>
         </div>
       )}
@@ -483,6 +801,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
           { color: '#60a5fa', label: 'Your position' },
           { color: '#ffffff', label: 'Tee box' },
           { color: '#4ade80', label: 'Pin (draggable)' },
+          { color: '#f59e0b', label: 'Shot line' },
           { color: '#ffcc00', label: 'Measure start' },
           { color: '#ef4444', label: 'Measure end' },
         ].map(l => (
