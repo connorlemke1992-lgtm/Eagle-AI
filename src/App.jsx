@@ -49,10 +49,14 @@ export default function App() {
   const [pinPos, setPinPos] = useState(null)
   const [distanceToPin, setDistanceToPin] = useState(null)
   const [shotHistory, setShotHistory] = useState([])
+  const [roundHistory, setRoundHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('round_history') || '[]')
+    } catch { return [] }
+  })
   const [showProfile, setShowProfile] = useState(false)
   const lastHoleSwitch = useRef(null)
 
-  // Listen for auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser)
@@ -76,29 +80,54 @@ export default function App() {
     setShotHistory(prev => [...prev, shot])
   }
 
+  function finishRound() {
+    const holeStats = (() => {
+      try { return JSON.parse(localStorage.getItem('hole_stats') || '{}') }
+      catch { return {} }
+    })()
+
+    const round = {
+      id: Date.now(),
+      date: new Date().toISOString(),
+      course: selectedCourse?.course?.club_name || 'Unknown Course',
+      scores: [...scores],
+      holeStats,
+      shotHistory: [...shotHistory],
+      holesPlayed: scores.filter(s => s !== null).length,
+    }
+
+    const updated = [round, ...roundHistory]
+    setRoundHistory(updated)
+    localStorage.setItem('round_history', JSON.stringify(updated))
+
+    // Reset current round
+    setScores(new Array(18).fill(null))
+    setShotHistory([])
+    localStorage.removeItem('hole_stats')
+    localStorage.removeItem('visited_holes')
+    setCurrentHole(0)
+    setActiveTab('stats')
+  }
+
   async function handleSignOut() {
     await signOut(auth)
     setUser(null)
     setShowProfile(false)
   }
 
-  // Global GPS tracking
   useEffect(() => {
     if (!navigator.geolocation) return
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setPlayerPos({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude
-        })
-      },
+      (pos) => setPlayerPos({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude
+      }),
       null,
       { enableHighAccuracy: true, timeout: 12000 }
     )
     return () => navigator.geolocation.clearWatch(watchId)
   }, [])
 
-  // Update distance whenever player or pin moves
   useEffect(() => {
     if (playerPos && pinPos) {
       setDistanceToPin(haversineYards(
@@ -108,7 +137,6 @@ export default function App() {
     }
   }, [playerPos, pinPos])
 
-  // Auto hole detection
   useEffect(() => {
     if (!playerPos || !selectedCourse) return
     const holes = selectedCourse?.course?.tees?.male?.[0]?.holes ||
@@ -132,8 +160,7 @@ export default function App() {
 
     const now = Date.now()
     if (
-      closestDist < 150 &&
-      closestHole !== currentHole &&
+      closestDist < 150 && closestHole !== currentHole &&
       (!lastHoleSwitch.current || now - lastHoleSwitch.current > 30000)
     ) {
       setCurrentHole(closestHole)
@@ -141,7 +168,6 @@ export default function App() {
     }
   }, [playerPos, selectedCourse])
 
-  // Show loading screen while checking auth
   if (authLoading) {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--g1)',
@@ -149,18 +175,13 @@ export default function App() {
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontFamily: 'Bebas Neue', fontSize: 48,
             color: '#4db87a', letterSpacing: 2 }}>⛳ Eagle AI</div>
-          <div style={{ color: 'rgba(255,255,255,0.5)', marginTop: 8 }}>
-            Loading...
-          </div>
+          <div style={{ color: 'rgba(255,255,255,0.5)', marginTop: 8 }}>Loading...</div>
         </div>
       </div>
     )
   }
 
-  // Show login if not authenticated
-  if (!user) {
-    return <Login onLogin={setUser} />
-  }
+  if (!user) return <Login onLogin={setUser} />
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh',
@@ -180,7 +201,6 @@ export default function App() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column',
           alignItems: 'flex-end', gap: 4 }}>
-          {/* User avatar */}
           <button onClick={() => setShowProfile(!showProfile)}
             style={{ background: 'rgba(255,255,255,0.15)', border: 'none',
               borderRadius: 20, padding: '4px 12px', cursor: 'pointer',
@@ -211,8 +231,7 @@ export default function App() {
           <div style={{ fontSize: 13, color: '#fff', marginBottom: 4 }}>
             👋 {user.displayName || 'Golfer'}
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
-            marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 12 }}>
             {user.email}
           </div>
           <button onClick={handleSignOut}
@@ -244,10 +263,16 @@ export default function App() {
             currentHole={currentHole}
             setCurrentHole={setCurrentHole}
             selectedCourse={selectedCourse}
+            onFinishRound={finishRound}
           />
         )}
         {activeTab === 'stats' && (
-          <Stats scores={scores} shotHistory={shotHistory} />
+          <Stats
+            scores={scores}
+            shotHistory={shotHistory}
+            roundHistory={roundHistory}
+            selectedCourse={selectedCourse}
+          />
         )}
         {activeTab === 'games' && <Games />}
         {activeTab === 'coach' && (
@@ -280,8 +305,7 @@ export default function App() {
         background: '#fff', borderTop: '1px solid var(--bd)',
         display: 'flex', zIndex: 100 }}>
         {tabs.map(tab => (
-          <button key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             style={{ flex: 1, border: 'none', background: 'transparent',
               padding: '10px 4px', cursor: 'pointer', display: 'flex',
               flexDirection: 'column', alignItems: 'center', gap: 3,
