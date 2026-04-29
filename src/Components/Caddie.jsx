@@ -64,14 +64,9 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
   const lastAdvicePosRef = useRef(null)
   const weatherRef = useRef(null)
 
-  // Reload bag when returning from MyBag screen
   function handleBackFromBag() {
     setBag(loadBag())
     setShowMyBag(false)
-  }
-
-  if (showMyBag) {
-    return <MyBag onBack={handleBackFromBag} />
   }
 
   const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
@@ -87,7 +82,6 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
     .map(([name, dist]) => ({ name, dist, diff: Math.abs(dist - (distanceToPin || holeYards || 0)) }))
     .sort((a, b) => a.diff - b.diff)
 
-  // Auto-refresh advice when player moves 30+ yards
   useEffect(() => {
     if (!playerPos || !weatherRef.current) return
     if (!lastAdvicePosRef.current) {
@@ -105,6 +99,21 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
       generateAdvice(weatherRef.current)
     }
   }, [playerPos])
+
+  useEffect(() => {
+    if (weatherRef.current) generateAdvice(weatherRef.current)
+  }, [currentHole, selectedCourse])
+
+  useEffect(() => {
+    if (weatherRef.current && distanceToPin) {
+      generateAdvice(weatherRef.current)
+    }
+  }, [pinPos])
+
+  // ✅ Safe to return early after all hooks
+  if (showMyBag) {
+    return <MyBag onBack={handleBackFromBag} />
+  }
 
   async function getLocation() {
     setStatus('loading')
@@ -188,16 +197,6 @@ Account for wind, temperature and conditions to recommend the exact club and adj
     }
     setAdviceLoading(false)
   }
-
-  useEffect(() => {
-    if (weatherRef.current) generateAdvice(weatherRef.current)
-  }, [currentHole, selectedCourse])
-
-  useEffect(() => {
-    if (weatherRef.current && distanceToPin) {
-      generateAdvice(weatherRef.current)
-    }
-  }, [pinPos])
 
   return (
     <div style={{ padding: 16 }}>
