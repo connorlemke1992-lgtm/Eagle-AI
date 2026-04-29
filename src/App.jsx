@@ -19,6 +19,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('caddie')
   const [scores, setScores] = useState(new Array(18).fill(null))
   const [currentHole, setCurrentHole] = useState(0)
+  const [selectedCourse, setSelectedCourse] = useState(null)
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh',
@@ -31,7 +32,11 @@ export default function App() {
           <div style={{ fontFamily: 'Bebas Neue', fontSize: 26,
             color: '#4db87a', letterSpacing: 1 }}>⛳ Eagle AI</div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
-            marginTop: 1 }}>Your tour-level caddie</div>
+            marginTop: 1 }}>
+            {selectedCourse
+              ? `📍 ${selectedCourse.course?.club_name}`
+              : 'Your tour-level caddie'}
+          </div>
         </div>
         <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 20,
           padding: '4px 12px', fontSize: 13, color: '#fff', fontWeight: 600 }}>
@@ -42,7 +47,11 @@ export default function App() {
       {/* Tab content */}
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 70 }}>
         {activeTab === 'caddie' && (
-          <Caddie currentHole={currentHole} setCurrentHole={setCurrentHole} />
+          <Caddie
+            currentHole={currentHole}
+            setCurrentHole={setCurrentHole}
+            selectedCourse={selectedCourse}
+          />
         )}
         {activeTab === 'scorecard' && (
           <Scorecard scores={scores} setScores={setScores}
@@ -50,9 +59,18 @@ export default function App() {
         )}
         {activeTab === 'stats' && <Stats scores={scores} />}
         {activeTab === 'games' && <Games />}
-        {activeTab === 'coach' && <Coach currentHole={currentHole} />}
+        {activeTab === 'coach' && (
+          <Coach
+            currentHole={currentHole}
+            selectedCourse={selectedCourse}
+          />
+        )}
         {activeTab === 'map' && (
-          <HoleView currentHole={currentHole} setCurrentHole={setCurrentHole} />
+          <HoleView
+            currentHole={currentHole}
+            setCurrentHole={setCurrentHole}
+            onCourseSelect={setSelectedCourse}
+          />
         )}
       </div>
 

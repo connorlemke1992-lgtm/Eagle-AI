@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const holes = [
+const fallbackHoles = [
   {par:4,yards:412,hcp:7,name:"The Opener",type:"Dogleg Right"},
   {par:5,yards:531,hcp:3,name:"The Long Walk",type:"Straight"},
   {par:3,yards:178,hcp:15,name:"Carry or Die",type:"Island Green"},
@@ -30,14 +30,25 @@ const quickQuestions = [
   "Give me a pre-shot routine I can use every hole.",
 ]
 
-export default function Coach({ currentHole }) {
+export default function Coach({ currentHole, selectedCourse }) {
   const [messages, setMessages] = useState([
     { role: 'ai', text: "I'm Eagle, your AI golf coach. I know your current hole and conditions. Ask me anything — swing tips, strategy, mental game, club selection." }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const h = holes[currentHole]
+  // Use real course data if available, otherwise fallback
+  const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
+                    selectedCourse?.course?.tees?.female?.[0]?.holes || null
+
+  const h = realHoles
+    ? realHoles[currentHole]
+    : fallbackHoles[currentHole]
+
+  const courseName = selectedCourse?.course?.club_name || null
+  const holeYards = realHoles ? h?.yardage : h?.yards
+  const holePar = h?.par
+  const holeHcp = h?.handicap || h?.hcp
 
   async function send(msg) {
     if (!msg.trim() || loading) return
@@ -46,6 +57,10 @@ export default function Coach({ currentHole }) {
     setInput('')
     setLoading(true)
 
+    const holeContext = courseName
+      ? `The player is on Hole ${currentHole + 1} at ${courseName} — Par ${holePar}, ${holeYards} yards, Handicap ${holeHcp}.`
+      : `The player is on Hole ${currentHole + 1} — "${h?.name}" (Par ${holePar}, ${holeYards} yards, ${h?.type}).`
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -53,7 +68,7 @@ export default function Coach({ currentHole }) {
         body: JSON.stringify({
           model: 'claude-sonnet-4-5',
           max_tokens: 1000,
-          system: `You are Eagle, an expert PGA-level golf coach and caddie. Current context: the player is on Hole ${currentHole + 1} — "${h.name}" (Par ${h.par}, ${h.yards} yards, ${h.type}). Give concise, practical, expert advice. Use proper golf terminology. Be encouraging but direct. Keep answers under 120 words.`,
+          system: `You are Eagle, an expert PGA-level golf coach and caddie. ${holeContext} Give concise, practical, expert advice. Use proper golf terminology. Be encouraging but direct. Keep answers under 120 words.`,
           messages: [{ role: 'user', content: userMsg }]
         })
       })
@@ -68,6 +83,24 @@ export default function Coach({ currentHole }) {
 
   return (
     <div style={{ padding: 16 }}>
+
+      {/* Course context banner */}
+      {courseName && (
+        <div style={{ background: 'var(--g1)', borderRadius: 10,
+          padding: '8px 14px', marginBottom: 12, display: 'flex',
+          alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 16 }}>⛳</span>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>
+              {courseName}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
+              Hole {currentHole + 1} · Par {holePar} · {holeYards} yds
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ background: '#fff', border: '1px solid var(--bd)',
         borderRadius: 12, padding: 12, marginBottom: 12,
         maxHeight: 340, overflowY: 'auto',

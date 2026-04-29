@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-const holes = [
+const fallbackHoles = [
   {par:4,yards:412,hcp:7,name:"The Opener",type:"Dogleg Right"},
   {par:5,yards:531,hcp:3,name:"The Long Walk",type:"Straight"},
   {par:3,yards:178,hcp:15,name:"Carry or Die",type:"Island Green"},
@@ -32,14 +32,23 @@ function degreesToCardinal(deg) {
   return dirs[Math.round(deg / 45) % 8]
 }
 
-export default function Caddie({ currentHole, setCurrentHole }) {
+export default function Caddie({ currentHole, setCurrentHole, selectedCourse }) {
   const [weather, setWeather] = useState(null)
   const [status, setStatus] = useState('idle')
   const [advice, setAdvice] = useState('')
   const [adviceLoading, setAdviceLoading] = useState(false)
   const [coords, setCoords] = useState(null)
 
-  const h = holes[currentHole]
+  // Use real course data if available, otherwise fallback
+  const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
+                    selectedCourse?.course?.tees?.female?.[0]?.holes || null
+
+  const h = realHoles ? realHoles[currentHole] : fallbackHoles[currentHole]
+  const courseName = selectedCourse?.course?.club_name || null
+  const holeYards = realHoles ? h?.yardage : h?.yards
+  const holePar = h?.par
+  const holeHcp = h?.handicap || h?.hcp
+  const holeName = realHoles ? `Hole ${currentHole + 1} at ${courseName}` : h?.name
 
   async function getLocation() {
     setStatus('loading')
@@ -62,7 +71,6 @@ export default function Caddie({ currentHole, setCurrentHole }) {
       const w = {
         windSpeed: Math.round(c.wind_speed_10m),
         windDir: degreesToCardinal(c.wind_direction_10m),
-        windDeg: Math.round(c.wind_direction_10m),
         windGusts: Math.round(c.wind_gusts_10m),
         temp: Math.round(c.temperature_2m),
         humidity: c.relative_humidity_2m,
@@ -79,10 +87,14 @@ export default function Caddie({ currentHole, setCurrentHole }) {
   async function generateAdvice(w) {
     setAdviceLoading(true)
     setAdvice('')
-    const hole = holes[currentHole]
+
+    const holeContext = courseName
+      ? `Hole ${currentHole + 1} at ${courseName} — Par ${holePar}, ${holeYards} yards, Handicap ${holeHcp}`
+      : `Hole ${currentHole + 1} — "${h?.name}" (Par ${holePar}, ${holeYards} yards, ${h?.type})`
+
     const prompt = `You are Eagle, an elite AI golf caddie. Give a short, confident caddie tip (2-3 sentences max) for this exact situation:
 
-Hole ${currentHole + 1} — "${hole.name}" (Par ${hole.par}, ${hole.yards} yards, ${hole.type})
+${holeContext}
 
 LIVE CONDITIONS RIGHT NOW:
 - Wind: ${w.windSpeed} mph from the ${w.windDir}, gusting ${w.windGusts} mph
@@ -114,14 +126,33 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
 
   useEffect(() => {
     if (weather) generateAdvice(weather)
-  }, [currentHole])
+  }, [currentHole, selectedCourse])
 
   const ranked = Object.entries(bag)
-    .map(([name, dist]) => ({ name, dist, diff: Math.abs(dist - h.yards) }))
+    .map(([name, dist]) => ({ name, dist, diff: Math.abs(dist - (holeYards || 0)) }))
     .sort((a, b) => a.diff - b.diff)
 
   return (
     <div style={{ padding: 16 }}>
+
+      {/* Course banner */}
+      {courseName && (
+        <div style={{ background: 'var(--g1)', borderRadius: 10,
+          padding: '8px 14px', marginBottom: 12, display: 'flex',
+          alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 16 }}>⛳</span>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>
+              {courseName}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
+              Hole {currentHole + 1} · Par {holePar} · {holeYards} yds
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hole nav */}
       <div style={{ display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', marginBottom: 12 }}>
         <button onClick={() => setCurrentHole(Math.max(0, currentHole - 1))}
@@ -134,7 +165,7 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
             Hole {currentHole + 1}
           </div>
           <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
-            Par {h.par} · {h.yards} yds · {h.name}
+            Par {holePar} · {holeYards} yds · {holeName}
           </div>
         </div>
         <button onClick={() => setCurrentHole(Math.min(17, currentHole + 1))}
@@ -206,8 +237,7 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
                 ↻ Refresh
               </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)',
-              gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
               {[
                 { icon: '💨', label: 'Wind', val: weather.windSpeed + ' mph' },
                 { icon: '🧭', label: 'From', val: weather.windDir },
@@ -250,8 +280,7 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
           </div>
 
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
-            textTransform: 'uppercase', letterSpacing: '0.07em',
-            marginBottom: 8 }}>
+            textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
             Clubs for this hole
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
