@@ -22,7 +22,7 @@ function bestClub(yards) {
     .sort((a,b) => a.diff-b.diff)[0]
 }
 
-export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, playerPos, pinPos, setPinPos, distanceToPin }) {
+export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, playerPos, pinPos, setPinPos, distanceToPin, showSearch, setShowSearch }) {
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const pinMarkerRef = useRef(null)
@@ -34,40 +34,39 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
   const measureStartRef = useRef(null)
   const [tapDist, setTapDist] = useState(null)
   const [tapClub, setTapClub] = useState(null)
-  const [courseData, setCourseData] = useState(null)
-  const [showSearch, setShowSearch] = useState(true)
+  const [courseData, setCourseData] = useState(() => {
+    try {
+      const stored = localStorage.getItem('selected_course')
+      return stored ? JSON.parse(stored) : null
+    } catch { return null }
+  })
 
   const holes = courseData?.course?.tees?.male?.[0]?.holes ||
                 courseData?.course?.tees?.female?.[0]?.holes || []
   const h = holes[currentHole]
 
-  // Update player marker when GPS position changes
   useEffect(() => {
-    if (!mapInstanceRef.current || !playerPos) return
-    if (!playerMarkerRef.current) {
+    if (playerMarkerRef.current && playerPos) {
+      playerMarkerRef.current.setPosition(playerPos)
+    } else if (mapInstanceRef.current && playerPos && !playerMarkerRef.current) {
       playerMarkerRef.current = new window.google.maps.Marker({
         position: playerPos,
         map: mapInstanceRef.current,
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: '#60a5fa',
-          fillOpacity: 1,
-          strokeColor: '#fff',
-          strokeWeight: 2,
+          scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
+          strokeColor: '#fff', strokeWeight: 2,
         },
         title: 'You'
       })
-    } else {
-      playerMarkerRef.current.setPosition(playerPos)
     }
   }, [playerPos])
 
   useEffect(() => {
-    if (courseData && mapRef.current && !mapInstanceRef.current) {
+    if (courseData && mapRef.current && !mapInstanceRef.current && !showSearch) {
       loadGoogleMaps()
     }
-  }, [courseData])
+  }, [courseData, showSearch])
 
   useEffect(() => {
     if (mapInstanceRef.current && courseData) {
@@ -117,18 +116,13 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
     placeHoleMarkers(map)
     addMapClickListener(map)
 
-    // Place player marker if we already have position
     if (playerPos) {
       playerMarkerRef.current = new window.google.maps.Marker({
-        position: playerPos,
-        map,
+        position: playerPos, map,
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: '#60a5fa',
-          fillOpacity: 1,
-          strokeColor: '#fff',
-          strokeWeight: 2,
+          scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
+          strokeColor: '#fff', strokeWeight: 2,
         },
         title: 'You'
       })
@@ -138,46 +132,29 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
   function placeHoleMarkers(map) {
     if (pinMarkerRef.current) pinMarkerRef.current.setMap(null)
     if (teeMarkerRef.current) teeMarkerRef.current.setMap(null)
-
     const coords = getHoleCoords(currentHole)
     const teeLat = coords.lat + 0.0003
     const teeLng = coords.lng + 0.0003
-
     teeMarkerRef.current = new window.google.maps.Marker({
-      position: { lat: teeLat, lng: teeLng },
-      map,
+      position: { lat: teeLat, lng: teeLng }, map,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
-        scale: 10,
-        fillColor: '#ffffff',
-        fillOpacity: 1,
-        strokeColor: '#333',
-        strokeWeight: 2,
+        scale: 10, fillColor: '#ffffff', fillOpacity: 1,
+        strokeColor: '#333', strokeWeight: 2,
       },
       title: 'Tee Box',
       label: { text: 'T', color: '#333', fontSize: '10px', fontWeight: 'bold' }
     })
-
-    // Draggable pin — updates shared pinPos in App.jsx
     pinMarkerRef.current = new window.google.maps.Marker({
-      position: coords,
-      map,
-      draggable: true,
+      position: coords, map, draggable: true,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
-        scale: 10,
-        fillColor: '#4ade80',
-        fillOpacity: 1,
-        strokeColor: '#fff',
-        strokeWeight: 2,
+        scale: 10, fillColor: '#4ade80', fillOpacity: 1,
+        strokeColor: '#fff', strokeWeight: 2,
       },
       title: 'Pin — drag to move flag'
     })
-
-    // Set initial pin position in App state
     setPinPos({ lat: coords.lat, lng: coords.lng })
-
-    // Update App state whenever pin is dragged
     pinMarkerRef.current.addListener('dragend', (e) => {
       setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
     })
@@ -263,7 +240,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
       <CourseSearch onCourseSelect={(data) => {
         setCourseData(data)
         onCourseSelect(data)
-        setShowSearch(false)
         mapInstanceRef.current = null
       }} />
     )
@@ -282,10 +258,9 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
           </div>
         </div>
         <button onClick={() => {
-          setShowSearch(true)
-          mapInstanceRef.current = null
-          setCourseData(null)
           onCourseSelect(null)
+          setCourseData(null)
+          mapInstanceRef.current = null
         }}
           style={{ border: '1px solid var(--bd)', borderRadius: 8,
             background: '#fff', padding: '6px 12px',
@@ -294,7 +269,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
         </button>
       </div>
 
-      {/* Live distance banner */}
       {distanceToPin && (
         <div style={{ background: 'var(--g1)', borderRadius: 10,
           padding: '10px 14px', marginBottom: 12,
@@ -314,7 +288,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, 
         </div>
       )}
 
-      {/* Hole nav */}
       <div style={{ display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', marginBottom: 10 }}>
         <button onClick={() => setCurrentHole(Math.max(0, currentHole - 1))}

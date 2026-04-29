@@ -34,6 +34,12 @@ export default function App() {
       return stored ? JSON.parse(stored) : null
     } catch { return null }
   })
+  const [showCourseSearch, setShowCourseSearch] = useState(() => {
+    try {
+      const stored = localStorage.getItem('selected_course')
+      return !stored
+    } catch { return true }
+  })
   const [playerPos, setPlayerPos] = useState(null)
   const [pinPos, setPinPos] = useState(null)
   const [distanceToPin, setDistanceToPin] = useState(null)
@@ -41,8 +47,13 @@ export default function App() {
 
   function handleCourseSelect(data) {
     setSelectedCourse(data)
-    if (data) localStorage.setItem('selected_course', JSON.stringify(data))
-    else localStorage.removeItem('selected_course')
+    if (data) {
+      localStorage.setItem('selected_course', JSON.stringify(data))
+      setShowCourseSearch(false)
+    } else {
+      localStorage.removeItem('selected_course')
+      setShowCourseSearch(true)
+    }
   }
 
   // Global GPS tracking
@@ -174,6 +185,8 @@ export default function App() {
             pinPos={pinPos}
             setPinPos={setPinPos}
             distanceToPin={distanceToPin}
+            showSearch={showCourseSearch}
+            setShowSearch={setShowCourseSearch}
           />
         )}
       </div>
