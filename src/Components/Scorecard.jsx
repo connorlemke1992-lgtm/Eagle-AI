@@ -1,4 +1,5 @@
 import { useState } from 'react'
+
 const defaultHoles = [
   {par:4,yards:412,hcp:7},{par:5,yards:531,hcp:3},{par:3,yards:178,hcp:15},
   {par:4,yards:387,hcp:11},{par:4,yards:445,hcp:1},{par:3,yards:152,hcp:17},
@@ -24,7 +25,6 @@ function ScoreDisplay({ score, par, size = 24 }) {
   }
 
   if (score === 1) {
-    // Hole in one — number 1 with two circles
     return (
       <span style={{ position: 'relative', display: 'inline-flex',
         alignItems: 'center', justifyContent: 'center',
@@ -74,7 +74,6 @@ function ScoreDisplay({ score, par, size = 24 }) {
       </span>
     )
   } else if (diff === 0) {
-    // Par — just the number
     return <span style={numStyle}>{score}</span>
   } else if (diff === 1) {
     // Bogey — one square
@@ -101,7 +100,6 @@ function ScoreDisplay({ score, par, size = 24 }) {
       </span>
     )
   } else {
-    // Triple+ — just the number
     return <span style={numStyle}>{score}</span>
   }
 }
@@ -172,20 +170,55 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
     } catch { return null }
   }
 
-  const scoreOptions = [
-    { label: 'HIO', val: 1 },
-    { label: h.par >= 5 ? 'Albatross' : 'Eagle', val: h.par - 2 },
-    { label: 'Birdie', val: h.par - 1 },
-    { label: 'Par', val: h.par },
-    { label: 'Bogey', val: h.par + 1 },
-    { label: '+2', val: h.par + 2 },
-    { label: '+3', val: h.par + 3 },
-  ].filter(o => o.val > 0)
+  // Build score options based on par
+  const allOptions = []
+
+  // Always show 1 (HIO)
+  allOptions.push({ label: 'HIO', val: 1 })
+
+  // Show 2 for par 4 and 5 (albatross on par 5, eagle on par 4)
+  if (h.par >= 4) {
+    allOptions.push({
+      label: h.par === 5 ? 'Albatross' : 'Eagle',
+      val: 2
+    })
+  }
+
+  // Show 3 for par 5 (eagle) and par 4 (birdie) and par 3 (birdie already handled)
+  if (h.par >= 4) {
+    allOptions.push({
+      label: h.par === 5 ? 'Eagle' : 'Birdie',
+      val: 3
+    })
+  }
+
+  // Par 3 specific — show birdie as val 2
+  if (h.par === 3) {
+    allOptions.push({ label: 'Birdie', val: 2 })
+  }
+
+  // Birdie for par 4 and 5
+  if (h.par >= 4) {
+    allOptions.push({ label: 'Birdie', val: h.par - 1 })
+  }
+
+  // Par, Bogey, +2, +3
+  allOptions.push({ label: 'Par', val: h.par })
+  allOptions.push({ label: 'Bogey', val: h.par + 1 })
+  allOptions.push({ label: '+2', val: h.par + 2 })
+  allOptions.push({ label: '+3', val: h.par + 3 })
+
+  // Deduplicate by val and filter out negatives
+  const seen = new Set()
+  const scoreOptions = allOptions.filter(o => {
+    if (o.val <= 0 || seen.has(o.val)) return false
+    seen.add(o.val)
+    return true
+  }).sort((a, b) => a.val - b.val)
 
   return (
     <div style={{ padding: 16 }}>
 
-      {/* Course name */}
       {selectedCourse && (
         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx2)',
           marginBottom: 12, textAlign: 'center' }}>
@@ -251,9 +284,8 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
           })}
         </div>
 
-        {/* Custom score input for high scores */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12,
-          alignItems: 'center' }}>
+        {/* Custom score */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
           <div style={{ fontSize: 11, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
             Other score:
           </div>
@@ -275,7 +307,7 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
           </button>
         </div>
 
-        {/* Putts tracker */}
+        {/* Putts */}
         <div style={{ background: 'var(--bg2)', borderRadius: 10,
           padding: '10px 12px', marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: 'var(--tx2)',
@@ -324,7 +356,6 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
             </tr>
           </thead>
           <tbody>
-            {/* Front 9 */}
             {holes.slice(0, 9).map((h, i) => {
               const s = scores[i]
               const d = s !== null ? s - h.par : null
@@ -348,7 +379,6 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
               )
             })}
 
-            {/* OUT subtotal */}
             <tr style={{ background: 'rgba(45,138,84,0.08)',
               borderTop: '2px solid var(--g3)', borderBottom: '2px solid var(--g3)' }}>
               <td colSpan={2} style={{ padding: '6px 4px', textAlign: 'center',
@@ -366,7 +396,6 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
               </td>
             </tr>
 
-            {/* Back 9 */}
             {holes.slice(9).map((h, i) => {
               const idx = i + 9
               const s = scores[idx]
@@ -391,7 +420,6 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
               )
             })}
 
-            {/* IN subtotal */}
             <tr style={{ background: 'rgba(45,138,84,0.08)',
               borderTop: '2px solid var(--g3)', borderBottom: '2px solid var(--g3)' }}>
               <td colSpan={2} style={{ padding: '6px 4px', textAlign: 'center',
@@ -409,7 +437,6 @@ export default function Scorecard({ scores, setScores, currentHole, setCurrentHo
               </td>
             </tr>
 
-            {/* Total */}
             <tr style={{ background: 'var(--g1)' }}>
               <td colSpan={2} style={{ padding: '8px 4px', textAlign: 'center',
                 fontWeight: 700, fontSize: 12, color: '#fff' }}>TOTAL</td>
