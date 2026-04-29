@@ -53,7 +53,7 @@ function loadBag() {
   return defaultBag
 }
 
-export default function Caddie({ currentHole, setCurrentHole, selectedCourse, playerPos, pinPos, distanceToPin }) {
+export default function Caddie({ currentHole, setCurrentHole, selectedCourse, playerPos, pinPos, setPinPos, distanceToPin }) {
   const [weather, setWeather] = useState(null)
   const [status, setStatus] = useState('idle')
   const [advice, setAdvice] = useState('')
@@ -61,8 +61,14 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
   const [coords, setCoords] = useState(null)
   const [showMyBag, setShowMyBag] = useState(false)
   const [bag, setBag] = useState(loadBag)
+  const [mapLoaded, setMapLoaded] = useState(false)
   const lastAdvicePosRef = useRef(null)
   const weatherRef = useRef(null)
+  const mapRef = useRef(null)
+  const mapInstanceRef = useRef(null)
+  const pinMarkerRef = useRef(null)
+  const playerMarkerRef = useRef(null)
+  const autoRefreshRef = useRef(null)
 
   function handleBackFromBag() {
     setBag(loadBag())
@@ -82,6 +88,18 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
     .map(([name, dist]) => ({ name, dist, diff: Math.abs(dist - (distanceToPin || holeYards || 0)) }))
     .sort((a, b) => a.diff - b.diff)
 
+  const recommendedClub = ranked[0]
+
+  // Auto-refresh weather every 15 seconds
+  useEffect(() => {
+    if (status !== 'ready' || !coords) return
+    autoRefreshRef.current = setInterval(() => {
+      fetchWeather(coords.lat, coords.lng, false)
+    }, 15000)
+    return () => clearInterval(autoRefreshRef.current)
+  }, [status, coords])
+
+  // Auto-refresh advice when player moves 30+ yards
   useEffect(() => {
     if (!playerPos || !weatherRef.current) return
     if (!lastAdvicePosRef.current) {
@@ -98,6 +116,24 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
       lastAdvicePosRef.current = playerPos
       generateAdvice(weatherRef.current)
     }
+
+    // Update player marker on mini map
+    if (mapInstanceRef.current && playerPos) {
+      if (!playerMarkerRef.current) {
+        playerMarkerRef.current = new window.google.maps.Marker({
+          position: playerPos,
+          map: mapInstanceRef.current,
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
+            strokeColor: '#fff', strokeWeight: 2,
+          },
+          title: 'You'
+        })
+      } else {
+        playerMarkerRef.current.setPosition(playerPos)
+      }
+    }
   }, [playerPos])
 
   useEffect(() => {
@@ -110,9 +146,104 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
     }
   }, [pinPos])
 
-  // ✅ Safe to return early after all hooks
+  // Init mini map when course selected
+  useEffect(() => {
+    if (selectedCourse && mapRef.current && !mapInstanceRef.current) {
+      loadMiniMap()
+    }
+  }, [selectedCourse, mapLoaded])
+
+  // Move mini map when hole changes
+  useEffect(() => {
+    if (mapInstanceRef.current && selectedCourse) {
+      moveMiniMap()
+    }
+  }, [currentHole])
+
   if (showMyBag) {
     return <MyBag onBack={handleBackFromBag} />
+  }
+
+  function getHoleCoords(holeIndex) {
+    const lat = selectedCourse?.course?.location?.latitude
+    const lng = selectedCourse?.course?.location?.longitude
+    if (lat && lng) {
+      return {
+        lat: lat + (Math.sin(holeIndex * 1.2) * 0.0008),
+        lng: lng + (Math.cos(holeIndex * 1.2) * 0.0008)
+      }
+    }
+    return { lat: 36.5686, lng: -121.9505 }
+  }
+
+  function loadMiniMap() {
+    if (window.google?.maps) { initMiniMap(); return }
+    const existing = document.querySelector('script[src*="maps.googleapis.com"]')
+    if (existing) {
+      existing.addEventListener('load', initMiniMap)
+      return
+    }
+    const script = document.createElement('script')
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_KEY}`
+    script.async = true
+    script.onload = initMiniMap
+    document.head.appendChild(script)
+  }
+
+  function initMiniMap() {
+    if (!mapRef.current) return
+    const coords = getHoleCoords(currentHole)
+    const map = new window.google.maps.Map(mapRef.current, {
+      center: coords,
+      zoom: 17,
+      mapTypeId: 'satellite',
+      tilt: 0,
+      zoomControl: false,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
+      gestureHandling: 'none',
+    })
+    mapInstanceRef.current = map
+
+    // Draggable pin
+    pinMarkerRef.current = new window.google.maps.Marker({
+      position: coords,
+      map,
+      draggable: true,
+      icon: {
+        path: window.google.maps.SymbolPath.CIRCLE,
+        scale: 10, fillColor: '#4ade80', fillOpacity: 1,
+        strokeColor: '#fff', strokeWeight: 2,
+      },
+      title: 'Pin'
+    })
+    setPinPos({ lat: coords.lat, lng: coords.lng })
+    pinMarkerRef.current.addListener('dragend', (e) => {
+      setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
+    })
+
+    if (playerPos) {
+      playerMarkerRef.current = new window.google.maps.Marker({
+        position: playerPos,
+        map,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
+          strokeColor: '#fff', strokeWeight: 2,
+        },
+        title: 'You'
+      })
+    }
+  }
+
+  function moveMiniMap() {
+    const coords = getHoleCoords(currentHole)
+    mapInstanceRef.current.panTo(coords)
+    if (pinMarkerRef.current) {
+      pinMarkerRef.current.setPosition(coords)
+      setPinPos({ lat: coords.lat, lng: coords.lng })
+    }
   }
 
   async function getLocation() {
@@ -121,14 +252,14 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
       async (pos) => {
         const c = { lat: pos.coords.latitude, lng: pos.coords.longitude }
         setCoords(c)
-        await fetchWeather(c.lat, c.lng)
+        await fetchWeather(c.lat, c.lng, true)
       },
       () => setStatus('error'),
       { enableHighAccuracy: true, timeout: 12000 }
     )
   }
 
-  async function fetchWeather(lat, lng) {
+  async function fetchWeather(lat, lng, showAdvice = true) {
     try {
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation&wind_speed_unit=mph&temperature_unit=fahrenheit&timezone=auto`
       const res = await fetch(url)
@@ -145,7 +276,7 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
       setWeather(w)
       weatherRef.current = w
       setStatus('ready')
-      await generateAdvice(w)
+      if (showAdvice) await generateAdvice(w)
     } catch {
       setStatus('error')
     }
@@ -157,28 +288,27 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
     setAdvice('')
 
     const holeContext = courseName
-      ? `Hole ${currentHole + 1} at ${courseName} — Par ${holePar}, ${holeYards} yards, Handicap ${holeHcp}`
-      : `Hole ${currentHole + 1} — "${h?.name}" (Par ${holePar}, ${holeYards} yards, ${h?.type})`
+      ? `Hole ${currentHole + 1} at ${courseName} — Par ${holePar}, ${holeYards} yards`
+      : `Hole ${currentHole + 1} — Par ${holePar}, ${holeYards} yards`
 
     const distanceContext = distanceToPin
-      ? `Player's current distance to the pin: ${distanceToPin} yards.`
-      : `Total hole distance: ${holeYards} yards.`
+      ? `Player is ${distanceToPin} yards from the pin.`
+      : `Full hole distance: ${holeYards} yards.`
 
-    const prompt = `You are Eagle, an elite AI golf caddie. Give a short, confident caddie tip (2-3 sentences max) for this exact situation:
+    const prompt = `You are Eagle, an elite AI golf caddie. Give exactly 2 sentences of caddie advice — no more.
 
 ${holeContext}
-
 ${distanceContext}
+Wind: ${w.windSpeed} mph from ${w.windDir}, gusting ${w.windGusts} mph
+Temp: ${w.temp}°F
+Rain: ${w.rain ? 'Yes' : 'No'}
+Player bag: ${JSON.stringify(bag)}
 
-LIVE CONDITIONS:
-- Wind: ${w.windSpeed} mph from the ${w.windDir}, gusting ${w.windGusts} mph
-- Temperature: ${w.temp}°F
-- Humidity: ${w.humidity}%
-- Rain: ${w.rain ? 'Yes — wet conditions' : 'No'}
-
-Player's exact club distances: ${JSON.stringify(bag)}
-
-Account for wind, temperature and conditions to recommend the exact club and adjusted yardage. Be specific.`
+Rules:
+- Sentence 1: Name the exact club and adjusted yardage accounting for wind/temp
+- Sentence 2: One key shot tip
+- No markdown, no asterisks, plain text only
+- Maximum 2 sentences, no exceptions`
 
     try {
       const res = await fetch('/api/chat', {
@@ -186,14 +316,14 @@ Account for wind, temperature and conditions to recommend the exact club and adj
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-5',
-          max_tokens: 1000,
+          max_tokens: 150,
           messages: [{ role: 'user', content: prompt }]
         })
       })
       const data = await res.json()
       setAdvice(data.content?.[0]?.text || 'Could not load advice.')
     } catch {
-      setAdvice('Could not connect to AI. Check your internet.')
+      setAdvice('Could not connect to AI.')
     }
     setAdviceLoading(false)
   }
@@ -226,45 +356,137 @@ Account for wind, temperature and conditions to recommend the exact club and adj
       {courseName && (
         <div style={{ background: 'var(--g1)', borderRadius: 10,
           padding: '8px 14px', marginBottom: 12, display: 'flex',
-          alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 16 }}>⛳</span>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>
-              {courseName}
+          alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>⛳</span>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>
+                {courseName}
+              </div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
+                Hole {currentHole + 1} · Par {holePar} · {holeYards} yds
+              </div>
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
-              Hole {currentHole + 1} · Par {holePar} · {holeYards} yds
+          </div>
+          {status === 'ready' && (
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)',
+              display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%',
+                background: '#4ade80' }} />
+              Live
             </div>
+          )}
+        </div>
+      )}
+
+      {/* BIG Club Recommendation Box */}
+      {status === 'ready' && (
+        <div style={{ background: 'var(--g1)', borderRadius: 14,
+          padding: '16px', marginBottom: 12,
+          display: 'grid', gridTemplateColumns: '1fr 1fr',
+          gap: 12, alignItems: 'center' }}>
+
+          {/* Recommended Club */}
+          <div style={{ background: 'rgba(255,255,255,0.08)',
+            borderRadius: 12, padding: '14px 10px', textAlign: 'center',
+            border: '2px solid #4ade80' }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)',
+              textTransform: 'uppercase', letterSpacing: '0.08em',
+              marginBottom: 4 }}>Hit This</div>
+            <div style={{ fontSize: 32, fontWeight: 800,
+              fontFamily: 'Bebas Neue', color: '#4ade80',
+              letterSpacing: 1 }}>
+              {recommendedClub?.name}
+            </div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)',
+              marginTop: 2 }}>
+              {recommendedClub?.dist}y club
+            </div>
+          </div>
+
+          {/* Distance + Weather */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {distanceToPin && (
+              <div style={{ background: 'rgba(255,255,255,0.08)',
+                borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)',
+                  textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                  To Pin
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700,
+                  fontFamily: 'Bebas Neue', color: '#fff' }}>
+                  {distanceToPin}y
+                </div>
+              </div>
+            )}
+            {weather && (
+              <div style={{ background: 'rgba(255,255,255,0.08)',
+                borderRadius: 10, padding: '8px 12px',
+                display: 'flex', justifyContent: 'space-around' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 14 }}>💨</div>
+                  <div style={{ fontSize: 11, color: '#fff', fontWeight: 600 }}>
+                    {weather.windSpeed}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>
+                    {weather.windDir}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 14 }}>🌡</div>
+                  <div style={{ fontSize: 11, color: '#fff', fontWeight: 600 }}>
+                    {weather.temp}°
+                  </div>
+                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>
+                    temp
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Live distance banner */}
-      {distanceToPin && (
-        <div style={{ background: '#1a3a2a', borderRadius: 10,
-          padding: '10px 14px', marginBottom: 12,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)',
-              textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-              📍 Live distance to pin
+      {/* Eagle AI Advice */}
+      {status === 'ready' && (
+        <div style={{ background: 'var(--g1)', borderRadius: 12,
+          padding: 14, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+            marginBottom: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%',
+              background: 'var(--g3)', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 14 }}>🎯</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)',
+              textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Eagle AI · {adviceLoading ? 'Thinking...' : 'Live advice'}
             </div>
-            <div style={{ fontSize: 28, fontWeight: 700,
-              fontFamily: 'Bebas Neue', color: '#4ade80' }}>
-              {distanceToPin} yards
-            </div>
+            {adviceLoading && (
+              <div style={{ marginLeft: 'auto', fontSize: 10,
+                color: 'rgba(255,255,255,0.4)' }}>🔄</div>
+            )}
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)',
-              textTransform: 'uppercase', letterSpacing: '0.07em' }}>Club</div>
-            <div style={{ fontSize: 22, fontWeight: 700,
-              fontFamily: 'Bebas Neue', color: '#fff' }}>
-              {ranked[0]?.name}
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>
-              {ranked[0]?.dist}y club
-            </div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.9)',
+            lineHeight: 1.6 }}>
+            {adviceLoading ? '...' : advice}
           </div>
+        </div>
+      )}
+
+      {/* Mini Map */}
+      {selectedCourse && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
+            textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>
+            Hole Map · Drag 🟢 to move pin
+          </div>
+          <div
+            ref={(el) => {
+              mapRef.current = el
+              if (el && !mapInstanceRef.current) setMapLoaded(true)
+            }}
+            style={{ width: '100%', height: 200, borderRadius: 12,
+              overflow: 'hidden', border: '1px solid var(--bd)' }}
+          />
         </div>
       )}
 
@@ -281,7 +503,7 @@ Account for wind, temperature and conditions to recommend the exact club and adj
             Hole {currentHole + 1}
           </div>
           <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
-            Par {holePar} · {holeYards} yds · {holeName}
+            Par {holePar} · {holeYards} yds
           </div>
         </div>
         <button onClick={() => setCurrentHole(Math.min(17, currentHole + 1))}
@@ -291,6 +513,7 @@ Account for wind, temperature and conditions to recommend the exact club and adj
             opacity: currentHole === 17 ? 0.3 : 1 }}>Next →</button>
       </div>
 
+      {/* Get conditions / error */}
       {status === 'idle' && (
         <div style={{ background: 'var(--g1)', borderRadius: 12,
           padding: 20, textAlign: 'center', marginBottom: 12 }}>
@@ -300,7 +523,7 @@ Account for wind, temperature and conditions to recommend the exact club and adj
           </div>
           <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13,
             marginBottom: 14, lineHeight: 1.5 }}>
-            Tap below to pull live wind and weather at your exact location.
+            Tap below to pull live wind and weather. Auto-refreshes every 15 seconds.
           </div>
           <button onClick={getLocation}
             style={{ background: 'var(--g3)', color: '#fff', border: 'none',
@@ -335,92 +558,22 @@ Account for wind, temperature and conditions to recommend the exact club and adj
         </div>
       )}
 
-      {status === 'ready' && weather && (
+      {/* Alt clubs */}
+      {status === 'ready' && (
         <>
-          <div style={{ background: 'var(--g1)', borderRadius: 12,
-            padding: 14, marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8,
-              marginBottom: 12 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%',
-                background: '#4ade80' }}></div>
-              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11,
-                textTransform: 'uppercase', letterSpacing: '0.07em',
-                fontWeight: 600 }}>Live conditions</div>
-              <button onClick={() => coords && fetchWeather(coords.lat, coords.lng)}
-                style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.1)',
-                  border: 'none', borderRadius: 8, color: 'rgba(255,255,255,0.6)',
-                  fontSize: 11, padding: '3px 10px', cursor: 'pointer' }}>
-                ↻ Refresh
-              </button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
-              {[
-                { icon: '💨', label: 'Wind', val: weather.windSpeed + ' mph' },
-                { icon: '🧭', label: 'From', val: weather.windDir },
-                { icon: '🌡', label: 'Temp', val: weather.temp + '°F' },
-                { icon: '💧', label: 'Humid', val: weather.humidity + '%' },
-              ].map(s => (
-                <div key={s.label} style={{ background: 'rgba(255,255,255,0.08)',
-                  borderRadius: 8, padding: '8px 4px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 16 }}>{s.icon}</div>
-                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)',
-                    textTransform: 'uppercase', marginTop: 2 }}>{s.label}</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#fff',
-                    marginTop: 2 }}>{s.val}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ background: 'var(--g1)', borderRadius: 12,
-            padding: 16, marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10,
-              marginBottom: 12 }}>
-              <div style={{ width: 34, height: 34, borderRadius: '50%',
-                background: 'var(--g3)', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: 16 }}>🎯</div>
-              <div>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)',
-                  textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  Eagle AI Caddie
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
-                  {adviceLoading ? 'Updating advice...' : 'Live advice'}
-                </div>
-              </div>
-              {adviceLoading && (
-                <div style={{ marginLeft: 'auto', fontSize: 11,
-                  color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>
-                  🔄 Recalculating...
-                </div>
-              )}
-            </div>
-            <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)',
-              lineHeight: 1.7 }}>
-              {adviceLoading ? '...' : advice}
-            </div>
-          </div>
-
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
             textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-            Clubs for this distance
+            Alternatives
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)',
             gap: 6, marginBottom: 12 }}>
-            {ranked.slice(0, 3).map((c, i) => (
+            {ranked.slice(1, 3).map((c) => (
               <div key={c.name}
-                style={{ background: '#fff',
-                  border: i === 0 ? '2px solid var(--g3)' : '1px solid var(--bd)',
+                style={{ background: '#fff', border: '1px solid var(--bd)',
                   borderRadius: 10, padding: '10px 8px', textAlign: 'center' }}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{c.name}</div>
                 <div style={{ fontSize: 11, color: 'var(--tx2)', marginTop: 2 }}>
                   {c.dist} yds
-                </div>
-                <div style={{ fontSize: 10, marginTop: 4, fontWeight: 500,
-                  padding: '2px 8px', borderRadius: 10, display: 'inline-block',
-                  background: i === 0 ? 'rgba(45,138,84,0.12)' : 'var(--bg2)',
-                  color: i === 0 ? 'var(--g2)' : 'var(--tx2)' }}>
-                  {i === 0 ? 'Recommended' : 'Alt'}
                 </div>
               </div>
             ))}
