@@ -28,18 +28,7 @@ function ScoreDisplay({ score, par, size = 24 }) {
         <span style={numStyle}>1</span>
       </span>
     )
-  } else if (diff <= -3) {
-    return (
-      <span style={{ position: 'relative', display: 'inline-flex',
-        alignItems: 'center', justifyContent: 'center', width: size + 8, height: size + 8 }}>
-        <span style={{ position: 'absolute', width: size + 8, height: size + 8,
-          borderRadius: '50%', border: '1.5px solid #111' }} />
-        <span style={{ position: 'absolute', width: size, height: size,
-          borderRadius: '50%', border: '1.5px solid #111' }} />
-        <span style={numStyle}>{score}</span>
-      </span>
-    )
-  } else if (diff === -2) {
+  } else if (diff <= -2) {
     return (
       <span style={{ position: 'relative', display: 'inline-flex',
         alignItems: 'center', justifyContent: 'center', width: size + 8, height: size + 8 }}>
@@ -101,9 +90,8 @@ function getPlusMinusColor(diff) {
 }
 
 function loadHoleStats() {
-  try {
-    return JSON.parse(localStorage.getItem('hole_stats') || '{}')
-  } catch { return {} }
+  try { return JSON.parse(localStorage.getItem('hole_stats') || '{}') }
+  catch { return {} }
 }
 
 function saveHoleStats(stats) {
@@ -111,9 +99,10 @@ function saveHoleStats(stats) {
 }
 
 export default function Scorecard({ scores, setScores, currentHole,
-  setCurrentHole, selectedCourse }) {
+  setCurrentHole, selectedCourse, onFinishRound }) {
   const [customInput, setCustomInput] = useState('')
   const [holeStats, setHoleStats] = useState(loadHoleStats)
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false)
 
   const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
                     selectedCourse?.course?.tees?.female?.[0]?.holes || null
@@ -152,19 +141,10 @@ export default function Scorecard({ scores, setScores, currentHole,
     saveHoleStats(updated)
   }
 
-  function getHoleStat(key) {
-    return holeStats[currentHole]?.[key]
-  }
+  function getHoleStat(key) { return holeStats[currentHole]?.[key] }
+  function getPutts() { return holeStats[currentHole]?.putts || null }
+  function setPutts(val) { updateHoleStat('putts', val) }
 
-  function getPutts() {
-    return holeStats[currentHole]?.putts || null
-  }
-
-  function setPutts(val) {
-    updateHoleStat('putts', val)
-  }
-
-  // Build score options based on par
   const allOptions = [{ label: 'HIO', val: 1 }]
   if (h.par >= 4) allOptions.push({ label: h.par === 5 ? 'Albatross' : 'Eagle', val: 2 })
   if (h.par >= 4) allOptions.push({ label: h.par === 5 ? 'Eagle' : 'Birdie', val: 3 })
@@ -225,7 +205,6 @@ export default function Scorecard({ scores, setScores, currentHole,
           {h.yards} yards · Hcp {h.hcp} · Tap your score
         </div>
 
-        {/* Score buttons */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)',
           gap: 6, marginBottom: 12 }}>
           {scoreOptions.map(o => {
@@ -233,8 +212,7 @@ export default function Scorecard({ scores, setScores, currentHole,
             return (
               <button key={o.val} onClick={() => setScore(o.val)}
                 style={{ border: selected ? '2px solid var(--g3)' : '1px solid var(--bd)',
-                  borderRadius: 10,
-                  background: selected ? 'rgba(45,138,84,0.1)' : '#fff',
+                  borderRadius: 10, background: selected ? 'rgba(45,138,84,0.1)' : '#fff',
                   padding: '8px 4px', cursor: 'pointer', textAlign: 'center' }}>
                 <div style={{ fontSize: 9, color: 'var(--tx2)',
                   textTransform: 'uppercase', marginBottom: 6 }}>{o.label}</div>
@@ -248,9 +226,7 @@ export default function Scorecard({ scores, setScores, currentHole,
 
         {/* Custom score */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
-          <div style={{ fontSize: 11, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
-            Other:
-          </div>
+          <div style={{ fontSize: 11, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Other:</div>
           <input type="number" value={customInput}
             onChange={e => setCustomInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && submitCustomScore()}
@@ -275,25 +251,21 @@ export default function Scorecard({ scores, setScores, currentHole,
                   ? '2px solid var(--g3)' : '1px solid var(--bd)',
                   borderRadius: 8, background: getPutts() === p
                     ? 'rgba(45,138,84,0.1)' : '#fff',
-                  padding: '8px 4px', cursor: 'pointer',
-                  fontSize: 16, fontWeight: 600 }}>
+                  padding: '8px 4px', cursor: 'pointer', fontSize: 16, fontWeight: 600 }}>
                 {p}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Quick stat inputs */}
+        {/* Hole stats */}
         <div style={{ background: 'var(--bg2)', borderRadius: 10,
           padding: '10px 12px', marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: 'var(--tx2)', textTransform: 'uppercase',
             letterSpacing: '0.05em', marginBottom: 10 }}>Hole Stats</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-
-            {/* Fairway Hit — only par 4s and 5s */}
             {h.par >= 4 && (
-              <div style={{ display: 'flex', alignItems: 'center',
-                justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ fontSize: 12, color: 'var(--tx)' }}>🌿 Fairway Hit</div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {['Yes', 'No', 'N/A'].map(v => (
@@ -311,10 +283,7 @@ export default function Scorecard({ scores, setScores, currentHole,
                 </div>
               </div>
             )}
-
-            {/* GIR */}
-            <div style={{ display: 'flex', alignItems: 'center',
-              justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontSize: 12, color: 'var(--tx)' }}>🟢 GIR</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {['Yes', 'No'].map(v => (
@@ -331,10 +300,7 @@ export default function Scorecard({ scores, setScores, currentHole,
                 ))}
               </div>
             </div>
-
-            {/* Sand Save */}
-            <div style={{ display: 'flex', alignItems: 'center',
-              justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontSize: 12, color: 'var(--tx)' }}>⛱️ Sand Save</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {['Yes', 'No', 'N/A'].map(v => (
@@ -346,15 +312,12 @@ export default function Scorecard({ scores, setScores, currentHole,
                       background: getHoleStat('sandSave') === v
                         ? 'rgba(45,138,84,0.1)' : '#fff',
                       color: getHoleStat('sandSave') === v ? 'var(--g2)' : 'var(--tx2)' }}>
-                      {v}
-                    </button>
-                  ))}
+                    {v}
+                  </button>
+                ))}
               </div>
             </div>
-
-            {/* Penalties */}
-            <div style={{ display: 'flex', alignItems: 'center',
-              justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontSize: 12, color: 'var(--tx)' }}>⚠️ Penalties</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {[0, 1, 2].map(v => (
@@ -366,9 +329,9 @@ export default function Scorecard({ scores, setScores, currentHole,
                       background: getHoleStat('penalties') === v
                         ? 'rgba(45,138,84,0.1)' : '#fff',
                       color: getHoleStat('penalties') === v ? 'var(--g2)' : 'var(--tx2)' }}>
-                      {v}
-                    </button>
-                  ))}
+                    {v}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -388,6 +351,44 @@ export default function Scorecard({ scores, setScores, currentHole,
           </button>
         </div>
       </div>
+
+      {/* Finish Round button — shows after 9 holes */}
+      {played.length >= 9 && !showFinishConfirm && (
+        <button onClick={() => setShowFinishConfirm(true)}
+          style={{ width: '100%', background: '#4ade80', border: 'none',
+            borderRadius: 12, padding: '14px', marginBottom: 16,
+            fontWeight: 700, fontSize: 16, cursor: 'pointer', color: '#1a3a2a' }}>
+          🏁 Finish Round
+        </button>
+      )}
+
+      {/* Finish Round confirmation */}
+      {showFinishConfirm && (
+        <div style={{ background: 'var(--g1)', borderRadius: 12,
+          padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
+            🏁 Finish this round?
+          </div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 14 }}>
+            {played.length} holes played · {totalStrokes} strokes · {getPlusMinus(diff)} vs par
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => { onFinishRound(); setShowFinishConfirm(false) }}
+              style={{ flex: 1, background: '#4ade80', border: 'none',
+                borderRadius: 10, padding: '12px', cursor: 'pointer',
+                fontWeight: 700, fontSize: 14, color: '#1a3a2a' }}>
+              ✅ Yes, finish round
+            </button>
+            <button onClick={() => setShowFinishConfirm(false)}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.1)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: 10, padding: '12px', cursor: 'pointer',
+                fontWeight: 600, fontSize: 13, color: '#fff' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Scorecard table */}
       <div style={{ background: '#fff', border: '1px solid var(--bd)',
