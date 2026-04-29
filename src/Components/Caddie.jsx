@@ -116,8 +116,6 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
       lastAdvicePosRef.current = playerPos
       generateAdvice(weatherRef.current)
     }
-
-    // Update player marker on mini map
     if (mapInstanceRef.current && playerPos) {
       if (!playerMarkerRef.current) {
         playerMarkerRef.current = new window.google.maps.Marker({
@@ -146,14 +144,12 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
     }
   }, [pinPos])
 
-  // Init mini map when course selected
   useEffect(() => {
     if (selectedCourse && mapRef.current && !mapInstanceRef.current) {
       loadMiniMap()
     }
   }, [selectedCourse, mapLoaded])
 
-  // Move mini map when hole changes
   useEffect(() => {
     if (mapInstanceRef.current && selectedCourse) {
       moveMiniMap()
@@ -179,10 +175,7 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
   function loadMiniMap() {
     if (window.google?.maps) { initMiniMap(); return }
     const existing = document.querySelector('script[src*="maps.googleapis.com"]')
-    if (existing) {
-      existing.addEventListener('load', initMiniMap)
-      return
-    }
+    if (existing) { existing.addEventListener('load', initMiniMap); return }
     const script = document.createElement('script')
     script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_KEY}`
     script.async = true
@@ -205,8 +198,6 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
       gestureHandling: 'none',
     })
     mapInstanceRef.current = map
-
-    // Draggable pin
     pinMarkerRef.current = new window.google.maps.Marker({
       position: coords,
       map,
@@ -222,7 +213,6 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
     pinMarkerRef.current.addListener('dragend', (e) => {
       setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
     })
-
     if (playerPos) {
       playerMarkerRef.current = new window.google.maps.Marker({
         position: playerPos,
@@ -385,8 +375,6 @@ Rules:
           padding: '16px', marginBottom: 12,
           display: 'grid', gridTemplateColumns: '1fr 1fr',
           gap: 12, alignItems: 'center' }}>
-
-          {/* Recommended Club */}
           <div style={{ background: 'rgba(255,255,255,0.08)',
             borderRadius: 12, padding: '14px 10px', textAlign: 'center',
             border: '2px solid #4ade80' }}>
@@ -394,55 +382,61 @@ Rules:
               textTransform: 'uppercase', letterSpacing: '0.08em',
               marginBottom: 4 }}>Hit This</div>
             <div style={{ fontSize: 32, fontWeight: 800,
-              fontFamily: 'Bebas Neue', color: '#4ade80',
-              letterSpacing: 1 }}>
+              fontFamily: 'Bebas Neue', color: '#4ade80', letterSpacing: 1 }}>
               {recommendedClub?.name}
             </div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)',
-              marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
               {recommendedClub?.dist}y club
             </div>
           </div>
+          {distanceToPin && (
+            <div style={{ background: 'rgba(255,255,255,0.08)',
+              borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)',
+                textTransform: 'uppercase' }}>To Pin</div>
+              <div style={{ fontSize: 28, fontWeight: 700,
+                fontFamily: 'Bebas Neue', color: '#fff' }}>
+                {distanceToPin}y
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
-          {/* Distance + Weather */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {distanceToPin && (
-              <div style={{ background: 'rgba(255,255,255,0.08)',
-                borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+      {/* Weather Widget */}
+      {status === 'ready' && weather && (
+        <div style={{ background: 'var(--g1)', borderRadius: 12,
+          padding: 14, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+            marginBottom: 12 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%',
+              background: '#4ade80' }}></div>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11,
+              textTransform: 'uppercase', letterSpacing: '0.07em',
+              fontWeight: 600 }}>Live conditions</div>
+            <button onClick={() => coords && fetchWeather(coords.lat, coords.lng, false)}
+              style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.1)',
+                border: 'none', borderRadius: 8, color: 'rgba(255,255,255,0.6)',
+                fontSize: 11, padding: '3px 10px', cursor: 'pointer' }}>
+              ↻ Refresh
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+            {[
+              { icon: '💨', label: 'Wind', val: weather.windSpeed + ' mph' },
+              { icon: '🧭', label: 'From', val: weather.windDir },
+              { icon: '🌡', label: 'Temp', val: weather.temp + '°F' },
+              { icon: '💧', label: 'Humid', val: weather.humidity + '%' },
+            ].map(s => (
+              <div key={s.label} style={{ background: 'rgba(255,255,255,0.08)',
+                borderRadius: 8, padding: '8px 4px', textAlign: 'center' }}>
+                <div style={{ fontSize: 16 }}>{s.icon}</div>
                 <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)',
-                  textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-                  To Pin
-                </div>
-                <div style={{ fontSize: 24, fontWeight: 700,
-                  fontFamily: 'Bebas Neue', color: '#fff' }}>
-                  {distanceToPin}y
-                </div>
+                  textTransform: 'uppercase', marginTop: 2 }}>{s.label}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#fff',
+                  marginTop: 2 }}>{s.val}</div>
               </div>
-            )}
-            {weather && (
-              <div style={{ background: 'rgba(255,255,255,0.08)',
-                borderRadius: 10, padding: '8px 12px',
-                display: 'flex', justifyContent: 'space-around' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 14 }}>💨</div>
-                  <div style={{ fontSize: 11, color: '#fff', fontWeight: 600 }}>
-                    {weather.windSpeed}
-                  </div>
-                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>
-                    {weather.windDir}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 14 }}>🌡</div>
-                  <div style={{ fontSize: 11, color: '#fff', fontWeight: 600 }}>
-                    {weather.temp}°
-                  </div>
-                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>
-                    temp
-                  </div>
-                </div>
-              </div>
-            )}
+            ))}
           </div>
         </div>
       )}
@@ -513,7 +507,7 @@ Rules:
             opacity: currentHole === 17 ? 0.3 : 1 }}>Next →</button>
       </div>
 
-      {/* Get conditions / error */}
+      {/* Get conditions */}
       {status === 'idle' && (
         <div style={{ background: 'var(--g1)', borderRadius: 12,
           padding: 20, textAlign: 'center', marginBottom: 12 }}>
