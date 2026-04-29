@@ -54,6 +54,259 @@ function loadBag() {
   return defaultBag
 }
 
+function EagleVision({ onClose, bag, weather, distanceToPin, currentHole, holePar, holeYards, courseName }) {
+  const [mode, setMode] = useState(null) // null | 'lie' | 'putt'
+  const [photo, setPhoto] = useState(null)
+  const [photoData, setPhotoData] = useState(null)
+  const [analysis, setAnalysis] = useState('')
+  const [loading, setLoading] = useState(false)
+  const fileRef = useRef(null)
+
+  function handlePhoto(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setPhoto(URL.createObjectURL(file))
+    const reader = new FileReader()
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1]
+      setPhotoData(base64)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function analyzePhoto() {
+    if (!photoData) return
+    setLoading(true)
+    setAnalysis('')
+
+    const liePrompt = `You are Eagle, an elite PGA-level golf caddie analyzing a photo of a golfer's ball and lie.
+
+Analyze this image and provide:
+1. Type of lie (fairway, rough, tight, fluffy, buried, uphill, downhill, sidehill, divot, sand, etc.)
+2. Recommended club for this lie
+3. Key shot adjustment needed (ball position, swing thought)
+4. One specific tip for this exact lie
+
+Context:
+- Hole ${currentHole + 1}${courseName ? ` at ${courseName}` : ''} — Par ${holePar}, ${holeYards} yards
+${distanceToPin ? `- Distance to pin: ${distanceToPin} yards` : ''}
+${weather ? `- Wind: ${weather.windSpeed} mph from ${weather.windDir}` : ''}
+- Player bag: ${JSON.stringify(bag)}
+
+Keep response under 80 words. Plain text only, no markdown.`
+
+    const puttPrompt = `You are Eagle, an elite PGA-level golf caddie analyzing a photo of a putt.
+
+Look at the image carefully and provide:
+1. Break direction (left, right, straight, double break)
+2. How much break to play (slight, moderate, significant)
+3. Speed recommendation (firm, medium, dying speed)
+4. Exactly where to aim (e.g. "aim 2 cups right of center")
+5. One key tip
+
+Keep response under 80 words. Plain text only, no markdown.`
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 300,
+          messages: [{
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: photoData,
+                }
+              },
+              {
+                type: 'text',
+                text: mode === 'lie' ? liePrompt : puttPrompt
+              }
+            ]
+          }]
+        })
+      })
+      const data = await res.json()
+      setAnalysis(data.content?.[0]?.text || 'Could not analyze photo.')
+    } catch (err) {
+      setAnalysis('Could not analyze photo. Please try again.')
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <button onClick={onClose}
+        style={{ border: '1px solid var(--bd)', borderRadius: 8,
+          background: '#fff', padding: '6px 14px', cursor: 'pointer',
+          fontSize: 13, marginBottom: 16 }}>← Back</button>
+
+      <div style={{ fontFamily: 'Bebas Neue', fontSize: 26, marginBottom: 4 }}>
+        📸 Eagle Vision
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 20 }}>
+        AI-powered shot and putt analysis
+      </div>
+
+      {/* Mode selector */}
+      {!mode && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <button onClick={() => setMode('lie')}
+            style={{ background: 'var(--g1)', border: 'none', borderRadius: 14,
+              padding: '20px 16px', cursor: 'pointer', textAlign: 'left',
+              display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ fontSize: 40 }}>⛳</div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff',
+                marginBottom: 4 }}>Analyze My Lie</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)',
+                lineHeight: 1.5 }}>
+                Take a photo of your ball position. Eagle will read your lie
+                and recommend the right shot.
+              </div>
+            </div>
+          </button>
+
+          <button onClick={() => setMode('putt')}
+            style={{ background: 'var(--g1)', border: 'none', borderRadius: 14,
+              padding: '20px 16px', cursor: 'pointer', textAlign: 'left',
+              display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ fontSize: 40 }}>🎯</div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff',
+                marginBottom: 4 }}>Read My Putt</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)',
+                lineHeight: 1.5 }}>
+                Take a photo showing your ball and the hole. Eagle will read
+                the break and tell you exactly where to aim.
+              </div>
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* Photo capture */}
+      {mode && (
+        <div>
+          <div style={{ background: 'var(--g1)', borderRadius: 12,
+            padding: 14, marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff',
+              marginBottom: 6 }}>
+              {mode === 'lie' ? '⛳ Lie Analysis' : '🎯 Putt Reader'}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)',
+              lineHeight: 1.5 }}>
+              {mode === 'lie'
+                ? 'Take a photo showing your ball and the ground around it clearly.'
+                : 'Take a photo showing your ball AND the hole in the same frame. Get low to see the break.'}
+            </div>
+          </div>
+
+          {/* Photo preview */}
+          {photo && (
+            <div style={{ marginBottom: 16 }}>
+              <img src={photo} alt="Golf shot"
+                style={{ width: '100%', borderRadius: 12, maxHeight: 300,
+                  objectFit: 'cover', border: '1px solid var(--bd)' }} />
+            </div>
+          )}
+
+          {/* Camera button */}
+          <input ref={fileRef} type="file" accept="image/*"
+            capture="environment" onChange={handlePhoto}
+            style={{ display: 'none' }} />
+
+          <button onClick={() => fileRef.current?.click()}
+            style={{ width: '100%', background: photo ? '#fff' : 'var(--g1)',
+              border: photo ? '1px solid var(--bd)' : 'none',
+              borderRadius: 12, padding: '14px', cursor: 'pointer',
+              fontWeight: 700, fontSize: 15, marginBottom: 12,
+              color: photo ? 'var(--tx)' : '#fff' }}>
+            {photo ? '📸 Retake Photo' : '📸 Take Photo'}
+          </button>
+
+          {/* Analyze button */}
+          {photo && !loading && !analysis && (
+            <button onClick={analyzePhoto}
+              style={{ width: '100%', background: '#4ade80', border: 'none',
+                borderRadius: 12, padding: '14px', cursor: 'pointer',
+                fontWeight: 700, fontSize: 15, color: '#1a3a2a',
+                marginBottom: 12 }}>
+              🎯 Analyze with Eagle AI
+            </button>
+          )}
+
+          {/* Loading */}
+          {loading && (
+            <div style={{ background: 'var(--g1)', borderRadius: 12,
+              padding: 16, textAlign: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>
+                🔍 Eagle is analyzing your {mode === 'lie' ? 'lie' : 'putt'}...
+              </div>
+            </div>
+          )}
+
+          {/* Analysis result */}
+          {analysis && (
+            <div style={{ background: 'var(--g1)', borderRadius: 12,
+              padding: 16, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+                marginBottom: 10 }}>
+                <div style={{ width: 30, height: 30, borderRadius: '50%',
+                  background: 'var(--g3)', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', fontSize: 16 }}>🎯</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)',
+                  textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Eagle AI · {mode === 'lie' ? 'Lie Analysis' : 'Putt Read'}
+                </div>
+              </div>
+              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.9)',
+                lineHeight: 1.7 }}>
+                {analysis}
+              </div>
+              <button onClick={() => {
+                setAnalysis('')
+                setPhoto(null)
+                setPhotoData(null)
+              }}
+                style={{ marginTop: 12, background: 'rgba(255,255,255,0.1)',
+                  border: 'none', borderRadius: 8, padding: '8px 16px',
+                  cursor: 'pointer', color: 'rgba(255,255,255,0.6)',
+                  fontSize: 12 }}>
+                📸 Analyze Another
+              </button>
+            </div>
+          )}
+
+          <button onClick={() => {
+            setMode(null)
+            setPhoto(null)
+            setPhotoData(null)
+            setAnalysis('')
+          }}
+            style={{ width: '100%', background: 'var(--bg2)',
+              border: '1px solid var(--bd)', borderRadius: 10,
+              padding: '10px', cursor: 'pointer', fontSize: 13,
+              color: 'var(--tx2)' }}>
+            ← Choose different mode
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
   playerPos, pinPos, setPinPos, distanceToPin }) {
 
@@ -64,6 +317,7 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
   const [coords, setCoords] = useState(null)
   const [showMyBag, setShowMyBag] = useState(false)
   const [showHandicap, setShowHandicap] = useState(false)
+  const [showEagleVision, setShowEagleVision] = useState(false)
   const [bag, setBag] = useState(loadBag)
   const [mapLoaded, setMapLoaded] = useState(false)
   const lastAdvicePosRef = useRef(null)
@@ -150,6 +404,18 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
 
   if (showMyBag) return <MyBag onBack={handleBackFromBag} />
   if (showHandicap) return <Handicap onBack={() => setShowHandicap(false)} />
+  if (showEagleVision) return (
+    <EagleVision
+      onClose={() => setShowEagleVision(false)}
+      bag={bag}
+      weather={weather}
+      distanceToPin={distanceToPin}
+      currentHole={currentHole}
+      holePar={holePar}
+      holeYards={holeYards}
+      courseName={courseName}
+    />
+  )
 
   function getHoleCoords(holeIndex) {
     const lat = selectedCourse?.course?.location?.latitude
@@ -321,7 +587,7 @@ Rules:
       <button onClick={() => setShowHandicap(true)}
         style={{ width: '100%', background: '#fff',
           border: '1px solid var(--bd)', borderRadius: 10,
-          padding: '10px 14px', marginBottom: 12,
+          padding: '10px 14px', marginBottom: 8,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           cursor: 'pointer' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -336,6 +602,27 @@ Rules:
           </div>
         </div>
         <span style={{ fontSize: 16, color: 'var(--tx2)' }}>→</span>
+      </button>
+
+      {/* Eagle Vision button */}
+      <button onClick={() => setShowEagleVision(true)}
+        style={{ width: '100%', background: 'var(--g1)',
+          border: 'none', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          cursor: 'pointer' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 20 }}>📸</span>
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#fff' }}>
+              Eagle Vision
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
+              AI lie & putt analysis from photo
+            </div>
+          </div>
+        </div>
+        <span style={{ fontSize: 16, color: 'rgba(255,255,255,0.6)' }}>→</span>
       </button>
 
       {/* Course banner */}
@@ -550,8 +837,9 @@ Rules:
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)',
             gap: 6, marginBottom: 12 }}>
             {ranked.slice(1, 3).map((c) => (
-              <div key={c.name} style={{ background: '#fff', border: '1px solid var(--bd)',
-                borderRadius: 10, padding: '10px 8px', textAlign: 'center' }}>
+              <div key={c.name} style={{ background: '#fff',
+                border: '1px solid var(--bd)', borderRadius: 10,
+                padding: '10px 8px', textAlign: 'center' }}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{c.name}</div>
                 <div style={{ fontSize: 11, color: 'var(--tx2)', marginTop: 2 }}>
                   {c.dist} yds
