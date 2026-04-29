@@ -28,11 +28,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('caddie')
   const [scores, setScores] = useState(new Array(18).fill(null))
   const [currentHole, setCurrentHole] = useState(0)
-  const [selectedCourse, setSelectedCourse] = useState(null)
+  const [selectedCourse, setSelectedCourse] = useState(() => {
+    try {
+      const stored = localStorage.getItem('selected_course')
+      return stored ? JSON.parse(stored) : null
+    } catch { return null }
+  })
   const [playerPos, setPlayerPos] = useState(null)
   const [pinPos, setPinPos] = useState(null)
   const [distanceToPin, setDistanceToPin] = useState(null)
-  const lastAdvicePos = useRef(null)
+  const lastHoleSwitch = useRef(null)
+
+  function handleCourseSelect(data) {
+    setSelectedCourse(data)
+    if (data) localStorage.setItem('selected_course', JSON.stringify(data))
+    else localStorage.removeItem('selected_course')
+  }
 
   // Global GPS tracking
   useEffect(() => {
@@ -61,6 +72,42 @@ export default function App() {
       setDistanceToPin(dist)
     }
   }, [playerPos, pinPos])
+
+  // Auto hole detection based on GPS
+  useEffect(() => {
+    if (!playerPos || !selectedCourse) return
+    const holes = selectedCourse?.course?.tees?.male?.[0]?.holes ||
+                  selectedCourse?.course?.tees?.female?.[0]?.holes || []
+    if (holes.length === 0) return
+    const courseLat = selectedCourse?.course?.location?.latitude
+    const courseLng = selectedCourse?.course?.location?.longitude
+    if (!courseLat || !courseLng) return
+
+    const holePositions = holes.map((_, i) => ({
+      lat: courseLat + (Math.sin(i * 1.2) * 0.0008),
+      lng: courseLng + (Math.cos(i * 1.2) * 0.0008),
+    }))
+
+    let closestHole = 0
+    let closestDist = Infinity
+    holePositions.forEach((pos, i) => {
+      const dist = haversineYards(playerPos.lat, playerPos.lng, pos.lat, pos.lng)
+      if (dist < closestDist) {
+        closestDist = dist
+        closestHole = i
+      }
+    })
+
+    const now = Date.now()
+    if (
+      closestDist < 150 &&
+      closestHole !== currentHole &&
+      (!lastHoleSwitch.current || now - lastHoleSwitch.current > 30000)
+    ) {
+      setCurrentHole(closestHole)
+      lastHoleSwitch.current = now
+    }
+  }, [playerPos, selectedCourse])
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh',
@@ -101,6 +148,7 @@ export default function App() {
             selectedCourse={selectedCourse}
             playerPos={playerPos}
             pinPos={pinPos}
+            setPinPos={setPinPos}
             distanceToPin={distanceToPin}
           />
         )}
@@ -121,7 +169,7 @@ export default function App() {
           <HoleView
             currentHole={currentHole}
             setCurrentHole={setCurrentHole}
-            onCourseSelect={setSelectedCourse}
+            onCourseSelect={handleCourseSelect}
             playerPos={playerPos}
             pinPos={pinPos}
             setPinPos={setPinPos}
