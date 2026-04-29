@@ -1,3 +1,4 @@
+import { useState } from 'react'
 const defaultHoles = [
   {par:4,yards:412,hcp:7},{par:5,yards:531,hcp:3},{par:3,yards:178,hcp:15},
   {par:4,yards:387,hcp:11},{par:4,yards:445,hcp:1},{par:3,yards:152,hcp:17},
