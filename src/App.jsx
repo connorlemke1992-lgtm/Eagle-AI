@@ -136,7 +136,8 @@ export default function App() {
               : 'Your tour-level caddie'}
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+        <div style={{ display: 'flex', flexDirection: 'column',
+          alignItems: 'flex-end', gap: 4 }}>
           <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 20,
             padding: '4px 12px', fontSize: 13, color: '#fff', fontWeight: 600 }}>
             HCP: 14.2
@@ -164,8 +165,13 @@ export default function App() {
           />
         )}
         {activeTab === 'scorecard' && (
-          <Scorecard scores={scores} setScores={setScores}
-            currentHole={currentHole} setCurrentHole={setCurrentHole} />
+          <Scorecard
+            scores={scores}
+            setScores={setScores}
+            currentHole={currentHole}
+            setCurrentHole={setCurrentHole}
+            selectedCourse={selectedCourse}
+          />
         )}
         {activeTab === 'stats' && <Stats scores={scores} />}
         {activeTab === 'games' && <Games />}
