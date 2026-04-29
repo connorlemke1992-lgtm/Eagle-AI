@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const fallbackHoles = [
   {par:4,yards:412,hcp:7,name:"The Opener",type:"Dogleg Right"},
@@ -32,17 +32,26 @@ function degreesToCardinal(deg) {
   return dirs[Math.round(deg / 45) % 8]
 }
 
-export default function Caddie({ currentHole, setCurrentHole, selectedCourse }) {
+function haversineYards(lat1, lon1, lat2, lon2) {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1.094)
+}
+
+export default function Caddie({ currentHole, setCurrentHole, selectedCourse, playerPos, pinPos, distanceToPin }) {
   const [weather, setWeather] = useState(null)
   const [status, setStatus] = useState('idle')
   const [advice, setAdvice] = useState('')
   const [adviceLoading, setAdviceLoading] = useState(false)
   const [coords, setCoords] = useState(null)
+  const lastAdvicePosRef = useRef(null)
+  const weatherRef = useRef(null)
 
-  // Use real course data if available, otherwise fallback
   const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
                     selectedCourse?.course?.tees?.female?.[0]?.holes || null
-
   const h = realHoles ? realHoles[currentHole] : fallbackHoles[currentHole]
   const courseName = selectedCourse?.course?.club_name || null
   const holeYards = realHoles ? h?.yardage : h?.yards
@@ -50,12 +59,32 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse }) 
   const holeHcp = h?.handicap || h?.hcp
   const holeName = realHoles ? `Hole ${currentHole + 1} at ${courseName}` : h?.name
 
+  // Auto-refresh advice when player moves 30+ yards
+  useEffect(() => {
+    if (!playerPos || !weatherRef.current) return
+    if (!lastAdvicePosRef.current) {
+      lastAdvicePosRef.current = playerPos
+      return
+    }
+    const movedYards = haversineYards(
+      lastAdvicePosRef.current.lat,
+      lastAdvicePosRef.current.lng,
+      playerPos.lat,
+      playerPos.lng
+    )
+    if (movedYards >= 30) {
+      lastAdvicePosRef.current = playerPos
+      generateAdvice(weatherRef.current)
+    }
+  }, [playerPos])
+
   async function getLocation() {
     setStatus('loading')
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        await fetchWeather(pos.coords.latitude, pos.coords.longitude)
+        const c = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+        setCoords(c)
+        await fetchWeather(c.lat, c.lng)
       },
       () => setStatus('error'),
       { enableHighAccuracy: true, timeout: 12000 }
@@ -77,6 +106,7 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse }) 
         rain: c.precipitation > 0,
       }
       setWeather(w)
+      weatherRef.current = w
       setStatus('ready')
       await generateAdvice(w)
     } catch {
@@ -85,6 +115,7 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse }) 
   }
 
   async function generateAdvice(w) {
+    if (adviceLoading) return
     setAdviceLoading(true)
     setAdvice('')
 
@@ -92,11 +123,17 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse }) 
       ? `Hole ${currentHole + 1} at ${courseName} — Par ${holePar}, ${holeYards} yards, Handicap ${holeHcp}`
       : `Hole ${currentHole + 1} — "${h?.name}" (Par ${holePar}, ${holeYards} yards, ${h?.type})`
 
+    const distanceContext = distanceToPin
+      ? `Player's current distance to the pin: ${distanceToPin} yards.`
+      : `Total hole distance: ${holeYards} yards.`
+
     const prompt = `You are Eagle, an elite AI golf caddie. Give a short, confident caddie tip (2-3 sentences max) for this exact situation:
 
 ${holeContext}
 
-LIVE CONDITIONS RIGHT NOW:
+${distanceContext}
+
+LIVE CONDITIONS:
 - Wind: ${w.windSpeed} mph from the ${w.windDir}, gusting ${w.windGusts} mph
 - Temperature: ${w.temp}°F
 - Humidity: ${w.humidity}%
@@ -104,7 +141,7 @@ LIVE CONDITIONS RIGHT NOW:
 
 Player bag distances: ${JSON.stringify(bag)}
 
-Tell them: what club to hit, and one key thing to watch for in this wind.`
+Tell them exactly: what club to hit for this distance in this wind, and one key shot tip.`
 
     try {
       const res = await fetch('/api/chat', {
@@ -125,11 +162,18 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
   }
 
   useEffect(() => {
-    if (weather) generateAdvice(weather)
+    if (weatherRef.current) generateAdvice(weatherRef.current)
   }, [currentHole, selectedCourse])
 
+  // Re-generate advice when pin moves significantly
+  useEffect(() => {
+    if (weatherRef.current && distanceToPin) {
+      generateAdvice(weatherRef.current)
+    }
+  }, [pinPos])
+
   const ranked = Object.entries(bag)
-    .map(([name, dist]) => ({ name, dist, diff: Math.abs(dist - (holeYards || 0)) }))
+    .map(([name, dist]) => ({ name, dist, diff: Math.abs(dist - (distanceToPin || holeYards || 0)) }))
     .sort((a, b) => a.diff - b.diff)
 
   return (
@@ -147,6 +191,37 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
             </div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
               Hole {currentHole + 1} · Par {holePar} · {holeYards} yds
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live distance banner */}
+      {distanceToPin && (
+        <div style={{ background: '#1a3a2a', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)',
+              textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              📍 Live distance to pin
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700,
+              fontFamily: 'Bebas Neue', color: '#4ade80' }}>
+              {distanceToPin} yards
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)',
+              textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              Club
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700,
+              fontFamily: 'Bebas Neue', color: '#fff' }}>
+              {ranked[0]?.name}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+              {ranked[0]?.dist}y club
             </div>
           </div>
         </div>
@@ -269,9 +344,15 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
                   Eagle AI Caddie
                 </div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
-                  {adviceLoading ? 'Thinking...' : 'Live advice'}
+                  {adviceLoading ? 'Updating advice...' : 'Live advice'}
                 </div>
               </div>
+              {adviceLoading && (
+                <div style={{ marginLeft: 'auto', fontSize: 11,
+                  color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>
+                  🔄 Recalculating...
+                </div>
+              )}
             </div>
             <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)',
               lineHeight: 1.7 }}>
@@ -281,7 +362,7 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
 
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
             textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-            Clubs for this hole
+            Clubs for this distance
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
             gap: 6, marginBottom: 12 }}>

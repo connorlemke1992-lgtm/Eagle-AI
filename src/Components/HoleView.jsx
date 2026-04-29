@@ -22,11 +22,12 @@ function bestClub(yards) {
     .sort((a,b) => a.diff-b.diff)[0]
 }
 
-export default function HoleView({ currentHole, setCurrentHole, onCourseSelect }) {
+export default function HoleView({ currentHole, setCurrentHole, onCourseSelect, playerPos, pinPos, setPinPos, distanceToPin }) {
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const pinMarkerRef = useRef(null)
   const teeMarkerRef = useRef(null)
+  const playerMarkerRef = useRef(null)
   const measureMarkersRef = useRef([])
   const measureLineRef = useRef(null)
   const infoWindowRef = useRef(null)
@@ -38,8 +39,29 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect }
 
   const holes = courseData?.course?.tees?.male?.[0]?.holes ||
                 courseData?.course?.tees?.female?.[0]?.holes || []
-
   const h = holes[currentHole]
+
+  // Update player marker when GPS position changes
+  useEffect(() => {
+    if (!mapInstanceRef.current || !playerPos) return
+    if (!playerMarkerRef.current) {
+      playerMarkerRef.current = new window.google.maps.Marker({
+        position: playerPos,
+        map: mapInstanceRef.current,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: '#60a5fa',
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 2,
+        },
+        title: 'You'
+      })
+    } else {
+      playerMarkerRef.current.setPosition(playerPos)
+    }
+  }, [playerPos])
 
   useEffect(() => {
     if (courseData && mapRef.current && !mapInstanceRef.current) {
@@ -95,50 +117,69 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect }
     placeHoleMarkers(map)
     addMapClickListener(map)
 
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition((pos) => {
-        const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude }
-        if (!mapRef.userMarker) {
-          mapRef.userMarker = new window.google.maps.Marker({
-            position: userPos, map,
-            icon: {
-              path: window.google.maps.SymbolPath.CIRCLE,
-              scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
-              strokeColor: '#fff', strokeWeight: 2,
-            },
-            title: 'You'
-          })
-        } else {
-          mapRef.userMarker.setPosition(userPos)
-        }
-      }, null, { enableHighAccuracy: true })
+    // Place player marker if we already have position
+    if (playerPos) {
+      playerMarkerRef.current = new window.google.maps.Marker({
+        position: playerPos,
+        map,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: '#60a5fa',
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 2,
+        },
+        title: 'You'
+      })
     }
   }
 
   function placeHoleMarkers(map) {
     if (pinMarkerRef.current) pinMarkerRef.current.setMap(null)
     if (teeMarkerRef.current) teeMarkerRef.current.setMap(null)
+
     const coords = getHoleCoords(currentHole)
     const teeLat = coords.lat + 0.0003
     const teeLng = coords.lng + 0.0003
+
     teeMarkerRef.current = new window.google.maps.Marker({
-      position: { lat: teeLat, lng: teeLng }, map,
+      position: { lat: teeLat, lng: teeLng },
+      map,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
-        scale: 10, fillColor: '#ffffff', fillOpacity: 1,
-        strokeColor: '#333', strokeWeight: 2,
+        scale: 10,
+        fillColor: '#ffffff',
+        fillOpacity: 1,
+        strokeColor: '#333',
+        strokeWeight: 2,
       },
       title: 'Tee Box',
       label: { text: 'T', color: '#333', fontSize: '10px', fontWeight: 'bold' }
     })
+
+    // Draggable pin — updates shared pinPos in App.jsx
     pinMarkerRef.current = new window.google.maps.Marker({
-      position: coords, map, draggable: true,
+      position: coords,
+      map,
+      draggable: true,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
-        scale: 10, fillColor: '#4ade80', fillOpacity: 1,
-        strokeColor: '#fff', strokeWeight: 2,
+        scale: 10,
+        fillColor: '#4ade80',
+        fillOpacity: 1,
+        strokeColor: '#fff',
+        strokeWeight: 2,
       },
       title: 'Pin — drag to move flag'
+    })
+
+    // Set initial pin position in App state
+    setPinPos({ lat: coords.lat, lng: coords.lng })
+
+    // Update App state whenever pin is dragged
+    pinMarkerRef.current.addListener('dragend', (e) => {
+      setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
     })
   }
 
@@ -253,6 +294,27 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect }
         </button>
       </div>
 
+      {/* Live distance banner */}
+      {distanceToPin && (
+        <div style={{ background: 'var(--g1)', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%',
+              background: '#4ade80' }} />
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)',
+              textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              Live distance to pin
+            </div>
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 700,
+            fontFamily: 'Bebas Neue', color: '#4ade80' }}>
+            {distanceToPin} yds
+          </div>
+        </div>
+      )}
+
+      {/* Hole nav */}
       <div style={{ display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', marginBottom: 10 }}>
         <button onClick={() => setCurrentHole(Math.max(0, currentHole - 1))}
@@ -278,7 +340,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect }
       <div style={{ background: 'var(--bg2)', borderRadius: 8,
         padding: '8px 12px', fontSize: 12, color: 'var(--tx2)',
         marginBottom: 10, textAlign: 'center' }}>
-        👆 Tap 1 = start · Tap 2 = target · Line shows exact yardage · Drag 🟢 to move pin
+        👆 Tap 1 = start · Tap 2 = target · Drag 🟢 to move pin · 🔵 = you
       </div>
 
       <div ref={mapRef}

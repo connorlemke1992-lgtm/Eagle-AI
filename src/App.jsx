@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Caddie from './Components/Caddie'
 import Scorecard from './Components/Scorecard'
 import Stats from './Components/Stats'
@@ -15,11 +15,52 @@ const tabs = [
   { id: 'map', label: 'Map', icon: '🗺️' },
 ]
 
+function haversineYards(lat1, lon1, lat2, lon2) {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1.094)
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('caddie')
   const [scores, setScores] = useState(new Array(18).fill(null))
   const [currentHole, setCurrentHole] = useState(0)
   const [selectedCourse, setSelectedCourse] = useState(null)
+  const [playerPos, setPlayerPos] = useState(null)
+  const [pinPos, setPinPos] = useState(null)
+  const [distanceToPin, setDistanceToPin] = useState(null)
+  const lastAdvicePos = useRef(null)
+
+  // Global GPS tracking
+  useEffect(() => {
+    if (!navigator.geolocation) return
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const newPos = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude
+        }
+        setPlayerPos(newPos)
+      },
+      null,
+      { enableHighAccuracy: true, timeout: 12000 }
+    )
+    return () => navigator.geolocation.clearWatch(watchId)
+  }, [])
+
+  // Update distance whenever player or pin moves
+  useEffect(() => {
+    if (playerPos && pinPos) {
+      const dist = haversineYards(
+        playerPos.lat, playerPos.lng,
+        pinPos.lat, pinPos.lng
+      )
+      setDistanceToPin(dist)
+    }
+  }, [playerPos, pinPos])
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh',
@@ -31,16 +72,23 @@ export default function App() {
         <div>
           <div style={{ fontFamily: 'Bebas Neue', fontSize: 26,
             color: '#4db87a', letterSpacing: 1 }}>⛳ Eagle AI</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
-            marginTop: 1 }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>
             {selectedCourse
               ? `📍 ${selectedCourse.course?.club_name}`
               : 'Your tour-level caddie'}
           </div>
         </div>
-        <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 20,
-          padding: '4px 12px', fontSize: 13, color: '#fff', fontWeight: 600 }}>
-          HCP: 14.2
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 20,
+            padding: '4px 12px', fontSize: 13, color: '#fff', fontWeight: 600 }}>
+            HCP: 14.2
+          </div>
+          {distanceToPin && (
+            <div style={{ background: '#4ade80', borderRadius: 20,
+              padding: '3px 10px', fontSize: 12, color: '#1a3a2a', fontWeight: 700 }}>
+              📍 {distanceToPin} yds to pin
+            </div>
+          )}
         </div>
       </div>
 
@@ -51,6 +99,9 @@ export default function App() {
             currentHole={currentHole}
             setCurrentHole={setCurrentHole}
             selectedCourse={selectedCourse}
+            playerPos={playerPos}
+            pinPos={pinPos}
+            distanceToPin={distanceToPin}
           />
         )}
         {activeTab === 'scorecard' && (
@@ -63,6 +114,7 @@ export default function App() {
           <Coach
             currentHole={currentHole}
             selectedCourse={selectedCourse}
+            distanceToPin={distanceToPin}
           />
         )}
         {activeTab === 'map' && (
@@ -70,6 +122,10 @@ export default function App() {
             currentHole={currentHole}
             setCurrentHole={setCurrentHole}
             onCourseSelect={setSelectedCourse}
+            playerPos={playerPos}
+            pinPos={pinPos}
+            setPinPos={setPinPos}
+            distanceToPin={distanceToPin}
           />
         )}
       </div>
