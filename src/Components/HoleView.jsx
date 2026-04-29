@@ -37,7 +37,7 @@ function bestClub(yards, bag) {
 
 export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   playerPos, pinPos, setPinPos, distanceToPin, showSearch, setShowSearch,
-  shotHistory, addShot }) {
+  shotHistory = [], addShot }) {
 
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
@@ -67,8 +67,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     } catch { return [] }
   })
 
-  // Shot tracking state
-  const [shotMode, setShotMode] = useState('idle') // idle | waiting_for_ball
+  const [shotMode, setShotMode] = useState('idle')
   const [shotStart, setShotStart] = useState(null)
   const [pendingShot, setPendingShot] = useState(null)
   const [showClubPicker, setShowClubPicker] = useState(false)
@@ -118,7 +117,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     }
   }, [currentHole])
 
-  // Redraw shot lines when shot history changes
   useEffect(() => {
     if (mapInstanceRef.current) {
       drawShotLines()
@@ -193,13 +191,11 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   }
 
   function drawShotLines() {
-    // Clear existing shot lines
     shotLinesRef.current.forEach(l => l.setMap(null))
     shotMarkersRef.current.forEach(m => m.setMap(null))
     shotLinesRef.current = []
     shotMarkersRef.current = []
 
-    // Draw lines for current hole shots
     holeShots.forEach((shot, i) => {
       if (!shot.start || !shot.end) return
       const line = new window.google.maps.Polyline({
@@ -212,7 +208,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
       })
       shotLinesRef.current.push(line)
 
-      // Start marker
       const startM = new window.google.maps.Marker({
         position: shot.start,
         map: mapInstanceRef.current,
@@ -225,7 +220,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
       })
       shotMarkersRef.current.push(startM)
 
-      // End marker
       const endM = new window.google.maps.Marker({
         position: shot.end,
         map: mapInstanceRef.current,
@@ -239,7 +233,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     })
   }
 
-  // Shot tracking functions
   function handleIJustHit() {
     if (!playerPos) {
       alert('GPS not available — make sure location is enabled')
@@ -509,7 +502,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         </div>
       )}
 
-      {/* Club picker modal */}
+      {/* Club picker */}
       {showClubPicker && pendingShot && (
         <div style={{ background: 'var(--g1)', borderRadius: 14,
           padding: 16, marginBottom: 12 }}>
@@ -629,7 +622,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         </div>
       )}
 
-      {/* Shot history for this hole */}
+      {/* Shot history */}
       {holeShots.length > 0 && (
         <div style={{ marginBottom: 12 }}>
           <button onClick={() => setShowShotHistory(!showShotHistory)}
@@ -680,9 +673,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
                       </div>
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
-                    Shot {i + 1}
-                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--tx2)' }}>Shot {i + 1}</div>
                 </div>
               ))}
             </div>
