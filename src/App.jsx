@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
+import { auth } from './firebase'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
+import Login from './Components/Login'
 import Caddie from './Components/Caddie'
 import Scorecard from './Components/Scorecard'
 import Stats from './Components/Stats'
@@ -25,6 +28,8 @@ function haversineYards(lat1, lon1, lat2, lon2) {
 }
 
 export default function App() {
+  const [user, setUser] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('caddie')
   const [scores, setScores] = useState(new Array(18).fill(null))
   const [currentHole, setCurrentHole] = useState(0)
@@ -44,7 +49,17 @@ export default function App() {
   const [pinPos, setPinPos] = useState(null)
   const [distanceToPin, setDistanceToPin] = useState(null)
   const [shotHistory, setShotHistory] = useState([])
+  const [showProfile, setShowProfile] = useState(false)
   const lastHoleSwitch = useRef(null)
+
+  // Listen for auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser)
+      setAuthLoading(false)
+    })
+    return () => unsubscribe()
+  }, [])
 
   function handleCourseSelect(data) {
     setSelectedCourse(data)
@@ -61,16 +76,21 @@ export default function App() {
     setShotHistory(prev => [...prev, shot])
   }
 
+  async function handleSignOut() {
+    await signOut(auth)
+    setUser(null)
+    setShowProfile(false)
+  }
+
   // Global GPS tracking
   useEffect(() => {
     if (!navigator.geolocation) return
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
-        const newPos = {
+        setPlayerPos({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude
-        }
-        setPlayerPos(newPos)
+        })
       },
       null,
       { enableHighAccuracy: true, timeout: 12000 }
@@ -81,15 +101,14 @@ export default function App() {
   // Update distance whenever player or pin moves
   useEffect(() => {
     if (playerPos && pinPos) {
-      const dist = haversineYards(
+      setDistanceToPin(haversineYards(
         playerPos.lat, playerPos.lng,
         pinPos.lat, pinPos.lng
-      )
-      setDistanceToPin(dist)
+      ))
     }
   }, [playerPos, pinPos])
 
-  // Auto hole detection based on GPS
+  // Auto hole detection
   useEffect(() => {
     if (!playerPos || !selectedCourse) return
     const holes = selectedCourse?.course?.tees?.male?.[0]?.holes ||
@@ -108,10 +127,7 @@ export default function App() {
     let closestDist = Infinity
     holePositions.forEach((pos, i) => {
       const dist = haversineYards(playerPos.lat, playerPos.lng, pos.lat, pos.lng)
-      if (dist < closestDist) {
-        closestDist = dist
-        closestHole = i
-      }
+      if (dist < closestDist) { closestDist = dist; closestHole = i }
     })
 
     const now = Date.now()
@@ -124,6 +140,27 @@ export default function App() {
       lastHoleSwitch.current = now
     }
   }, [playerPos, selectedCourse])
+
+  // Show loading screen while checking auth
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--g1)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'Bebas Neue', fontSize: 48,
+            color: '#4db87a', letterSpacing: 2 }}>⛳ Eagle AI</div>
+          <div style={{ color: 'rgba(255,255,255,0.5)', marginTop: 8 }}>
+            Loading...
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show login if not authenticated
+  if (!user) {
+    return <Login onLogin={setUser} />
+  }
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh',
@@ -143,10 +180,21 @@ export default function App() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column',
           alignItems: 'flex-end', gap: 4 }}>
-          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 20,
-            padding: '4px 12px', fontSize: 13, color: '#fff', fontWeight: 600 }}>
-            HCP: 14.2
-          </div>
+          {/* User avatar */}
+          <button onClick={() => setShowProfile(!showProfile)}
+            style={{ background: 'rgba(255,255,255,0.15)', border: 'none',
+              borderRadius: 20, padding: '4px 12px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 22, height: 22, borderRadius: '50%',
+              background: '#4ade80', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 11, fontWeight: 700,
+              color: '#1a3a2a' }}>
+              {user.displayName?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'}
+            </div>
+            <span style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>
+              {user.displayName?.split(' ')[0] || 'Golfer'}
+            </span>
+          </button>
           {distanceToPin && (
             <div style={{ background: '#4ade80', borderRadius: 20,
               padding: '3px 10px', fontSize: 12, color: '#1a3a2a', fontWeight: 700 }}>
@@ -155,6 +203,26 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {/* Profile dropdown */}
+      {showProfile && (
+        <div style={{ background: 'var(--g1)', padding: '12px 16px',
+          borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ fontSize: 13, color: '#fff', marginBottom: 4 }}>
+            👋 {user.displayName || 'Golfer'}
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
+            marginBottom: 12 }}>
+            {user.email}
+          </div>
+          <button onClick={handleSignOut}
+            style={{ background: '#fee2e2', border: 'none', borderRadius: 8,
+              padding: '8px 16px', cursor: 'pointer', color: '#991b1b',
+              fontWeight: 600, fontSize: 13 }}>
+            Sign Out
+          </button>
+        </div>
+      )}
 
       {/* Tab content */}
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 70 }}>
