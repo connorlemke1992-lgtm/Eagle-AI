@@ -51,7 +51,7 @@ export default function Coach({ currentHole }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-5',
           max_tokens: 1000,
           system: `You are Eagle, an expert PGA-level golf coach and caddie. Current context: the player is on Hole ${currentHole + 1} — "${h.name}" (Par ${h.par}, ${h.yards} yards, ${h.type}). Give concise, practical, expert advice. Use proper golf terminology. Be encouraging but direct. Keep answers under 120 words.`,
           messages: [{ role: 'user', content: userMsg }]

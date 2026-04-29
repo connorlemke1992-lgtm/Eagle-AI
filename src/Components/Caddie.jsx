@@ -37,6 +37,7 @@ export default function Caddie({ currentHole, setCurrentHole }) {
   const [status, setStatus] = useState('idle')
   const [advice, setAdvice] = useState('')
   const [adviceLoading, setAdviceLoading] = useState(false)
+  const [coords, setCoords] = useState(null)
 
   const h = holes[currentHole]
 
@@ -44,6 +45,7 @@ export default function Caddie({ currentHole, setCurrentHole }) {
     setStatus('loading')
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
+        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
         await fetchWeather(pos.coords.latitude, pos.coords.longitude)
       },
       () => setStatus('error'),
@@ -95,11 +97,9 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-5',
           max_tokens: 1000,
           messages: [{ role: 'user', content: prompt }]
         })
@@ -122,7 +122,6 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
 
   return (
     <div style={{ padding: 16 }}>
-
       <div style={{ display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', marginBottom: 12 }}>
         <button onClick={() => setCurrentHole(Math.max(0, currentHole - 1))}
@@ -155,7 +154,6 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
           <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13,
             marginBottom: 14, lineHeight: 1.5 }}>
             Tap below to pull live wind and weather at your exact location.
-            No manual inputs needed.
           </div>
           <button onClick={getLocation}
             style={{ background: 'var(--g3)', color: '#fff', border: 'none',
@@ -201,7 +199,7 @@ Tell them: what club to hit, and one key thing to watch for in this wind.`
               <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11,
                 textTransform: 'uppercase', letterSpacing: '0.07em',
                 fontWeight: 600 }}>Live conditions</div>
-              <button onClick={() => fetchWeather(0, 0)}
+              <button onClick={() => coords && fetchWeather(coords.lat, coords.lng)}
                 style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.1)',
                   border: 'none', borderRadius: 8, color: 'rgba(255,255,255,0.6)',
                   fontSize: 11, padding: '3px 10px', cursor: 'pointer' }}>
