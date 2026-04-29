@@ -43,6 +43,7 @@ export default function App() {
   const [playerPos, setPlayerPos] = useState(null)
   const [pinPos, setPinPos] = useState(null)
   const [distanceToPin, setDistanceToPin] = useState(null)
+  const [shotHistory, setShotHistory] = useState([])
   const lastHoleSwitch = useRef(null)
 
   function handleCourseSelect(data) {
@@ -54,6 +55,10 @@ export default function App() {
       localStorage.removeItem('selected_course')
       setShowCourseSearch(true)
     }
+  }
+
+  function addShot(shot) {
+    setShotHistory(prev => [...prev, shot])
   }
 
   // Global GPS tracking
@@ -173,7 +178,9 @@ export default function App() {
             selectedCourse={selectedCourse}
           />
         )}
-        {activeTab === 'stats' && <Stats scores={scores} />}
+        {activeTab === 'stats' && (
+          <Stats scores={scores} shotHistory={shotHistory} />
+        )}
         {activeTab === 'games' && <Games />}
         {activeTab === 'coach' && (
           <Coach
@@ -193,6 +200,8 @@ export default function App() {
             distanceToPin={distanceToPin}
             showSearch={showCourseSearch}
             setShowSearch={setShowCourseSearch}
+            shotHistory={shotHistory}
+            addShot={addShot}
           />
         )}
       </div>
