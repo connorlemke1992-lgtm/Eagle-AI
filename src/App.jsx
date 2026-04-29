@@ -80,11 +80,13 @@ export default function App() {
     setShotHistory(prev => [...prev, shot])
   }
 
-  function finishRound() {
+  function finishRound(courseRating, slopeRating) {
     const holeStats = (() => {
       try { return JSON.parse(localStorage.getItem('hole_stats') || '{}') }
       catch { return {} }
     })()
+
+    const totalStrokes = scores.reduce((a, b) => b !== null ? a + b : a, 0)
 
     const round = {
       id: Date.now(),
@@ -94,6 +96,9 @@ export default function App() {
       holeStats,
       shotHistory: [...shotHistory],
       holesPlayed: scores.filter(s => s !== null).length,
+      score: totalStrokes,
+      courseRating: courseRating || null,
+      slope: slopeRating || null,
     }
 
     const updated = [round, ...roundHistory]
@@ -209,7 +214,8 @@ export default function App() {
               background: '#4ade80', display: 'flex', alignItems: 'center',
               justifyContent: 'center', fontSize: 11, fontWeight: 700,
               color: '#1a3a2a' }}>
-              {user.displayName?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'}
+              {user.displayName?.[0]?.toUpperCase() ||
+                user.email?.[0]?.toUpperCase() || '?'}
             </div>
             <span style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>
               {user.displayName?.split(' ')[0] || 'Golfer'}

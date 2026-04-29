@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import MyBag from './MyBag'
+import Handicap from './Handicap'
 
 const fallbackHoles = [
   {par:4,yards:412,hcp:7,name:"The Opener",type:"Dogleg Right"},
@@ -53,13 +54,16 @@ function loadBag() {
   return defaultBag
 }
 
-export default function Caddie({ currentHole, setCurrentHole, selectedCourse, playerPos, pinPos, setPinPos, distanceToPin }) {
+export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
+  playerPos, pinPos, setPinPos, distanceToPin }) {
+
   const [weather, setWeather] = useState(null)
   const [status, setStatus] = useState('idle')
   const [advice, setAdvice] = useState('')
   const [adviceLoading, setAdviceLoading] = useState(false)
   const [coords, setCoords] = useState(null)
   const [showMyBag, setShowMyBag] = useState(false)
+  const [showHandicap, setShowHandicap] = useState(false)
   const [bag, setBag] = useState(loadBag)
   const [mapLoaded, setMapLoaded] = useState(false)
   const lastAdvicePosRef = useRef(null)
@@ -90,7 +94,6 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
 
   const recommendedClub = ranked[0]
 
-  // Auto-refresh weather every 15 seconds
   useEffect(() => {
     if (status !== 'ready' || !coords) return
     autoRefreshRef.current = setInterval(() => {
@@ -99,7 +102,6 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
     return () => clearInterval(autoRefreshRef.current)
   }, [status, coords])
 
-  // Auto-refresh advice when player moves 30+ yards
   useEffect(() => {
     if (!playerPos || !weatherRef.current) return
     if (!lastAdvicePosRef.current) {
@@ -107,10 +109,8 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
       return
     }
     const movedYards = haversineYards(
-      lastAdvicePosRef.current.lat,
-      lastAdvicePosRef.current.lng,
-      playerPos.lat,
-      playerPos.lng
+      lastAdvicePosRef.current.lat, lastAdvicePosRef.current.lng,
+      playerPos.lat, playerPos.lng
     )
     if (movedYards >= 30) {
       lastAdvicePosRef.current = playerPos
@@ -119,14 +119,12 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
     if (mapInstanceRef.current && playerPos) {
       if (!playerMarkerRef.current) {
         playerMarkerRef.current = new window.google.maps.Marker({
-          position: playerPos,
-          map: mapInstanceRef.current,
+          position: playerPos, map: mapInstanceRef.current,
           icon: {
             path: window.google.maps.SymbolPath.CIRCLE,
             scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
             strokeColor: '#fff', strokeWeight: 2,
-          },
-          title: 'You'
+          }, title: 'You'
         })
       } else {
         playerMarkerRef.current.setPosition(playerPos)
@@ -139,26 +137,19 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
   }, [currentHole, selectedCourse])
 
   useEffect(() => {
-    if (weatherRef.current && distanceToPin) {
-      generateAdvice(weatherRef.current)
-    }
+    if (weatherRef.current && distanceToPin) generateAdvice(weatherRef.current)
   }, [pinPos])
 
   useEffect(() => {
-    if (selectedCourse && mapRef.current && !mapInstanceRef.current) {
-      loadMiniMap()
-    }
+    if (selectedCourse && mapRef.current && !mapInstanceRef.current) loadMiniMap()
   }, [selectedCourse, mapLoaded])
 
   useEffect(() => {
-    if (mapInstanceRef.current && selectedCourse) {
-      moveMiniMap()
-    }
+    if (mapInstanceRef.current && selectedCourse) moveMiniMap()
   }, [currentHole])
 
-  if (showMyBag) {
-    return <MyBag onBack={handleBackFromBag} />
-  }
+  if (showMyBag) return <MyBag onBack={handleBackFromBag} />
+  if (showHandicap) return <Handicap onBack={() => setShowHandicap(false)} />
 
   function getHoleCoords(holeIndex) {
     const lat = selectedCourse?.course?.location?.latitude
@@ -187,27 +178,19 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
     if (!mapRef.current) return
     const coords = getHoleCoords(currentHole)
     const map = new window.google.maps.Map(mapRef.current, {
-      center: coords,
-      zoom: 17,
-      mapTypeId: 'satellite',
-      tilt: 0,
-      zoomControl: false,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: false,
+      center: coords, zoom: 17, mapTypeId: 'satellite', tilt: 0,
+      zoomControl: false, mapTypeControl: false,
+      streetViewControl: false, fullscreenControl: false,
       gestureHandling: 'none',
     })
     mapInstanceRef.current = map
     pinMarkerRef.current = new window.google.maps.Marker({
-      position: coords,
-      map,
-      draggable: true,
+      position: coords, map, draggable: true,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
         scale: 10, fillColor: '#4ade80', fillOpacity: 1,
         strokeColor: '#fff', strokeWeight: 2,
-      },
-      title: 'Pin'
+      }, title: 'Pin'
     })
     setPinPos({ lat: coords.lat, lng: coords.lng })
     pinMarkerRef.current.addListener('dragend', (e) => {
@@ -215,14 +198,12 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
     })
     if (playerPos) {
       playerMarkerRef.current = new window.google.maps.Marker({
-        position: playerPos,
-        map,
+        position: playerPos, map,
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
           scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
           strokeColor: '#fff', strokeWeight: 2,
-        },
-        title: 'You'
+        }, title: 'You'
       })
     }
   }
@@ -267,9 +248,7 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
       weatherRef.current = w
       setStatus('ready')
       if (showAdvice) await generateAdvice(w)
-    } catch {
-      setStatus('error')
-    }
+    } catch { setStatus('error') }
   }
 
   async function generateAdvice(w) {
@@ -312,20 +291,18 @@ Rules:
       })
       const data = await res.json()
       setAdvice(data.content?.[0]?.text || 'Could not load advice.')
-    } catch {
-      setAdvice('Could not connect to AI.')
-    }
+    } catch { setAdvice('Could not connect to AI.') }
     setAdviceLoading(false)
   }
 
   return (
     <div style={{ padding: 16 }}>
 
-      {/* My Bag button */}
+      {/* Stock Yardages button */}
       <button onClick={() => setShowMyBag(true)}
         style={{ width: '100%', background: '#fff',
           border: '1px solid var(--bd)', borderRadius: 10,
-          padding: '10px 14px', marginBottom: 12,
+          padding: '10px 14px', marginBottom: 8,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           cursor: 'pointer' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -334,8 +311,27 @@ Rules:
             <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>
               Stock Yardages
             </div>
+            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>Edit your club distances</div>
+          </div>
+        </div>
+        <span style={{ fontSize: 16, color: 'var(--tx2)' }}>→</span>
+      </button>
+
+      {/* Handicap button */}
+      <button onClick={() => setShowHandicap(true)}
+        style={{ width: '100%', background: '#fff',
+          border: '1px solid var(--bd)', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          cursor: 'pointer' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 20 }}>📊</span>
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>
+              My Handicap
+            </div>
             <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
-              Edit your club distances
+              WHS handicap index tracker
             </div>
           </div>
         </div>
@@ -345,14 +341,12 @@ Rules:
       {/* Course banner */}
       {courseName && (
         <div style={{ background: 'var(--g1)', borderRadius: 10,
-          padding: '8px 14px', marginBottom: 12, display: 'flex',
-          alignItems: 'center', justifyContent: 'space-between' }}>
+          padding: '8px 14px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 16 }}>⛳</span>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>
-                {courseName}
-              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{courseName}</div>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
                 Hole {currentHole + 1} · Par {holePar} · {holeYards} yds
               </div>
@@ -361,8 +355,7 @@ Rules:
           {status === 'ready' && (
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)',
               display: 'flex', alignItems: 'center', gap: 4 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%',
-                background: '#4ade80' }} />
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80' }} />
               Live
             </div>
           )}
@@ -379,8 +372,9 @@ Rules:
             borderRadius: 12, padding: '14px 10px', textAlign: 'center',
             border: '2px solid #4ade80' }}>
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)',
-              textTransform: 'uppercase', letterSpacing: '0.08em',
-              marginBottom: 4 }}>Hit This</div>
+              textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+              Hit This
+            </div>
             <div style={{ fontSize: 32, fontWeight: 800,
               fontFamily: 'Bebas Neue', color: '#4ade80', letterSpacing: 1 }}>
               {recommendedClub?.name}
@@ -407,13 +401,12 @@ Rules:
       {status === 'ready' && weather && (
         <div style={{ background: 'var(--g1)', borderRadius: 12,
           padding: 14, marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8,
-            marginBottom: 12 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%',
-              background: '#4ade80' }}></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80' }} />
             <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11,
-              textTransform: 'uppercase', letterSpacing: '0.07em',
-              fontWeight: 600 }}>Live conditions</div>
+              textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 600 }}>
+              Live conditions
+            </div>
             <button onClick={() => coords && fetchWeather(coords.lat, coords.lng, false)}
               style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.1)',
                 border: 'none', borderRadius: 8, color: 'rgba(255,255,255,0.6)',
@@ -445,8 +438,7 @@ Rules:
       {status === 'ready' && (
         <div style={{ background: 'var(--g1)', borderRadius: 12,
           padding: 14, marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8,
-            marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <div style={{ width: 28, height: 28, borderRadius: '50%',
               background: 'var(--g3)', display: 'flex', alignItems: 'center',
               justifyContent: 'center', fontSize: 14 }}>🎯</div>
@@ -459,8 +451,7 @@ Rules:
                 color: 'rgba(255,255,255,0.4)' }}>🔄</div>
             )}
           </div>
-          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.9)',
-            lineHeight: 1.6 }}>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.9)', lineHeight: 1.6 }}>
             {adviceLoading ? '...' : advice}
           </div>
         </div>
@@ -473,14 +464,12 @@ Rules:
             textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>
             Hole Map · Drag 🟢 to move pin
           </div>
-          <div
-            ref={(el) => {
-              mapRef.current = el
-              if (el && !mapInstanceRef.current) setMapLoaded(true)
-            }}
+          <div ref={(el) => {
+            mapRef.current = el
+            if (el && !mapInstanceRef.current) setMapLoaded(true)
+          }}
             style={{ width: '100%', height: 200, borderRadius: 12,
-              overflow: 'hidden', border: '1px solid var(--bd)' }}
-          />
+              overflow: 'hidden', border: '1px solid var(--bd)' }} />
         </div>
       )}
 
@@ -507,7 +496,6 @@ Rules:
             opacity: currentHole === 17 ? 0.3 : 1 }}>Next →</button>
       </div>
 
-      {/* Get conditions */}
       {status === 'idle' && (
         <div style={{ background: 'var(--g1)', borderRadius: 12,
           padding: 20, textAlign: 'center', marginBottom: 12 }}>
@@ -562,9 +550,8 @@ Rules:
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)',
             gap: 6, marginBottom: 12 }}>
             {ranked.slice(1, 3).map((c) => (
-              <div key={c.name}
-                style={{ background: '#fff', border: '1px solid var(--bd)',
-                  borderRadius: 10, padding: '10px 8px', textAlign: 'center' }}>
+              <div key={c.name} style={{ background: '#fff', border: '1px solid var(--bd)',
+                borderRadius: 10, padding: '10px 8px', textAlign: 'center' }}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{c.name}</div>
                 <div style={{ fontSize: 11, color: 'var(--tx2)', marginTop: 2 }}>
                   {c.dist} yds

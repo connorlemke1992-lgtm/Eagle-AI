@@ -103,6 +103,8 @@ export default function Scorecard({ scores, setScores, currentHole,
   const [customInput, setCustomInput] = useState('')
   const [holeStats, setHoleStats] = useState(loadHoleStats)
   const [showFinishConfirm, setShowFinishConfirm] = useState(false)
+  const [courseRating, setCourseRating] = useState('')
+  const [slopeRating, setSlopeRating] = useState('')
 
   const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
                     selectedCourse?.course?.tees?.female?.[0]?.holes || null
@@ -251,7 +253,8 @@ export default function Scorecard({ scores, setScores, currentHole,
                   ? '2px solid var(--g3)' : '1px solid var(--bd)',
                   borderRadius: 8, background: getPutts() === p
                     ? 'rgba(45,138,84,0.1)' : '#fff',
-                  padding: '8px 4px', cursor: 'pointer', fontSize: 16, fontWeight: 600 }}>
+                  padding: '8px 4px', cursor: 'pointer',
+                  fontSize: 16, fontWeight: 600 }}>
                 {p}
               </button>
             ))}
@@ -265,7 +268,8 @@ export default function Scorecard({ scores, setScores, currentHole,
             letterSpacing: '0.05em', marginBottom: 10 }}>Hole Stats</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {h.par >= 4 && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center',
+                justifyContent: 'space-between' }}>
                 <div style={{ fontSize: 12, color: 'var(--tx)' }}>🌿 Fairway Hit</div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {['Yes', 'No', 'N/A'].map(v => (
@@ -283,7 +287,8 @@ export default function Scorecard({ scores, setScores, currentHole,
                 </div>
               </div>
             )}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between' }}>
               <div style={{ fontSize: 12, color: 'var(--tx)' }}>🟢 GIR</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {['Yes', 'No'].map(v => (
@@ -300,7 +305,8 @@ export default function Scorecard({ scores, setScores, currentHole,
                 ))}
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between' }}>
               <div style={{ fontSize: 12, color: 'var(--tx)' }}>⛱️ Sand Save</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {['Yes', 'No', 'N/A'].map(v => (
@@ -317,7 +323,8 @@ export default function Scorecard({ scores, setScores, currentHole,
                 ))}
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between' }}>
               <div style={{ fontSize: 12, color: 'var(--tx)' }}>⚠️ Penalties</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {[0, 1, 2].map(v => (
@@ -352,7 +359,7 @@ export default function Scorecard({ scores, setScores, currentHole,
         </div>
       </div>
 
-      {/* Finish Round button — shows after 9 holes */}
+      {/* Finish Round button */}
       {played.length >= 9 && !showFinishConfirm && (
         <button onClick={() => setShowFinishConfirm(true)}
           style={{ width: '100%', background: '#4ade80', border: 'none',
@@ -362,22 +369,69 @@ export default function Scorecard({ scores, setScores, currentHole,
         </button>
       )}
 
-      {/* Finish Round confirmation */}
+      {/* Finish Round confirmation with Course Rating + Slope */}
       {showFinishConfirm && (
         <div style={{ background: 'var(--g1)', borderRadius: 12,
           padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
             🏁 Finish this round?
           </div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 14 }}>
-            {played.length} holes played · {totalStrokes} strokes · {getPlusMinus(diff)} vs par
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 16 }}>
+            {played.length} holes · {totalStrokes} strokes · {getPlusMinus(diff)} vs par
           </div>
+
+          {/* Course Rating + Slope */}
+          <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10,
+            padding: 12, marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)',
+              marginBottom: 10, lineHeight: 1.5 }}>
+              📊 Enter Course Rating and Slope for handicap calculation
+              (find these on the scorecard):
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
+                  marginBottom: 6 }}>Course Rating</div>
+                <input type="number" value={courseRating}
+                  onChange={e => setCourseRating(e.target.value)}
+                  placeholder="e.g. 71.4" step="0.1"
+                  style={{ width: '100%', border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: 8, padding: '8px 10px', fontSize: 14,
+                    background: 'rgba(255,255,255,0.1)', color: '#fff',
+                    boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
+                  marginBottom: 6 }}>Slope Rating</div>
+                <input type="number" value={slopeRating}
+                  onChange={e => setSlopeRating(e.target.value)}
+                  placeholder="e.g. 125"
+                  style={{ width: '100%', border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: 8, padding: '8px 10px', fontSize: 14,
+                    background: 'rgba(255,255,255,0.1)', color: '#fff',
+                    boxSizing: 'border-box' }} />
+              </div>
+            </div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)',
+              marginTop: 8 }}>
+              Skip if you don't have these — your round will still be saved
+            </div>
+          </div>
+
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => { onFinishRound(); setShowFinishConfirm(false) }}
+            <button onClick={() => {
+              onFinishRound(
+                courseRating ? parseFloat(courseRating) : null,
+                slopeRating ? parseFloat(slopeRating) : null
+              )
+              setShowFinishConfirm(false)
+              setCourseRating('')
+              setSlopeRating('')
+            }}
               style={{ flex: 1, background: '#4ade80', border: 'none',
                 borderRadius: 10, padding: '12px', cursor: 'pointer',
                 fontWeight: 700, fontSize: 14, color: '#1a3a2a' }}>
-              ✅ Yes, finish round
+              ✅ Save Round
             </button>
             <button onClick={() => setShowFinishConfirm(false)}
               style={{ flex: 1, background: 'rgba(255,255,255,0.1)',
@@ -438,7 +492,8 @@ export default function Scorecard({ scores, setScores, currentHole,
               </td>
               <td style={{ padding: '6px 4px', textAlign: 'center',
                 fontWeight: 700, fontSize: 11,
-                color: getPlusMinusColor(front9Played > 0 ? front9Strokes - front9Par : null) }}>
+                color: getPlusMinusColor(front9Played > 0
+                  ? front9Strokes - front9Par : null) }}>
                 {front9Played > 0 ? getPlusMinus(front9Strokes - front9Par) : '—'}
               </td>
             </tr>
@@ -479,7 +534,8 @@ export default function Scorecard({ scores, setScores, currentHole,
               </td>
               <td style={{ padding: '6px 4px', textAlign: 'center',
                 fontWeight: 700, fontSize: 11,
-                color: getPlusMinusColor(back9Played > 0 ? back9Strokes - back9Par : null) }}>
+                color: getPlusMinusColor(back9Played > 0
+                  ? back9Strokes - back9Par : null) }}>
                 {back9Played > 0 ? getPlusMinus(back9Strokes - back9Par) : '—'}
               </td>
             </tr>
