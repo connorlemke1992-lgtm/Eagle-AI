@@ -21,6 +21,12 @@ const fallbackHoles = [
   {par:4,yards:437,hcp:18,name:"The Closer",type:"Finishing"},
 ]
 
+const defaultBag = {
+  "Driver":265,"3 Wood":235,"5 Wood":215,"Hybrid":200,
+  "4 Iron":190,"5 Iron":177,"6 Iron":164,"7 Iron":151,
+  "8 Iron":138,"9 Iron":124,"PW":112,"GW":98,"SW":82,"LW":65
+}
+
 const quickQuestions = [
   "What club should I hit from here?",
   "How do I hit a low punch shot into the wind?",
@@ -39,12 +45,12 @@ function loadBag() {
       return Object.fromEntries(arr.map(c => [c.name, c.yards]))
     }
   } catch {}
-  return null
+  return defaultBag
 }
 
 export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
   const [messages, setMessages] = useState([
-    { role: 'ai', text: "I'm Eagle, your AI golf coach. I know your current hole, conditions and your exact club distances. Ask me anything!" }
+    { role: 'ai', text: "I'm Eagle, your AI golf coach. I know your exact location, hole info and club distances. Ask me anything!" }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -64,18 +70,34 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
     setInput('')
     setLoading(true)
 
+    const bag = loadBag()
+
     const holeContext = courseName
-      ? `The player is on Hole ${currentHole + 1} at ${courseName} — Par ${holePar}, ${holeYards} yards, Handicap ${holeHcp}.`
-      : `The player is on Hole ${currentHole + 1} — "${h?.name}" (Par ${holePar}, ${holeYards} yards, ${h?.type}).`
+      ? `Hole ${currentHole + 1} at ${courseName} — Par ${holePar}, ${holeYards} yards total, Handicap ${holeHcp}.`
+      : `Hole ${currentHole + 1} — Par ${holePar}, ${holeYards} yards total.`
 
     const distanceContext = distanceToPin
-      ? `Player's current GPS distance to the pin: ${distanceToPin} yards.`
-      : ''
+      ? `GPS confirms player is exactly ${distanceToPin} yards from the pin right now.`
+      : `Player is likely on the tee — full hole is ${holeYards} yards.`
 
-    const bag = loadBag()
-    const bagContext = bag
-      ? `Player's exact club distances: ${JSON.stringify(bag)}.`
-      : ''
+    const bagContext = `Player's exact club distances: ${JSON.stringify(bag)}.`
+
+    const systemPrompt = `You are Eagle, an expert PGA-level golf coach and caddie.
+
+CURRENT SITUATION:
+- ${holeContext}
+- ${distanceContext}
+- ${bagContext}
+
+CRITICAL RULES — NEVER break these:
+1. NEVER ask the player how far they are — you already know from GPS above
+2. NEVER ask for their club distances — you already have them above
+3. NEVER ask clarifying questions — just give direct advice
+4. Always recommend a specific club using their exact yardages
+5. Account for wind and conditions when recommending clubs
+6. Keep answers under 100 words
+7. No markdown formatting, no asterisks, plain text only
+8. If asked "what club should I hit" — answer immediately with a specific club`
 
     try {
       const res = await fetch('/api/chat', {
@@ -83,8 +105,8 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-5',
-          max_tokens: 1000,
-          system: `You are Eagle, an expert PGA-level golf coach and caddie. ${holeContext} ${distanceContext} ${bagContext} When recommending clubs always use the player's exact yardages. Account for wind, temperature, and conditions. Give concise, practical, expert advice under 120 words.`,
+          max_tokens: 200,
+          system: systemPrompt,
           messages: [{ role: 'user', content: userMsg }]
         })
       })
@@ -104,31 +126,36 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
       {courseName && (
         <div style={{ background: 'var(--g1)', borderRadius: 10,
           padding: '8px 14px', marginBottom: 12, display: 'flex',
-          alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 16 }}>⛳</span>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>
-              {courseName}
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
-              Hole {currentHole + 1} · Par {holePar} · {holeYards} yds
-              {distanceToPin ? ` · 📍 ${distanceToPin} yds to pin` : ''}
+          alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>⛳</span>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>
+                {courseName}
+              </div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
+                Hole {currentHole + 1} · Par {holePar} · {holeYards} yds
+                {distanceToPin ? ` · 📍 ${distanceToPin} yds to pin` : ''}
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* Distance banner */}
-      {distanceToPin && !courseName && (
+      {distanceToPin && (
         <div style={{ background: '#1a3a2a', borderRadius: 10,
-          padding: '8px 14px', marginBottom: 12 }}>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
-            textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-            📍 Distance to pin
-          </div>
-          <div style={{ fontSize: 24, fontWeight: 700,
-            fontFamily: 'Bebas Neue', color: '#4ade80' }}>
-            {distanceToPin} yards
+          padding: '8px 14px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
+              textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              📍 Your distance to pin
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 700,
+              fontFamily: 'Bebas Neue', color: '#4ade80' }}>
+              {distanceToPin} yards
+            </div>
           </div>
         </div>
       )}
