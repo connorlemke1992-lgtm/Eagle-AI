@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import MyBag from './MyBag'
 
 const fallbackHoles = [
   {par:4,yards:412,hcp:7,name:"The Opener",type:"Dogleg Right"},
@@ -21,7 +22,7 @@ const fallbackHoles = [
   {par:4,yards:437,hcp:18,name:"The Closer",type:"Finishing"},
 ]
 
-const bag = {
+const defaultBag = {
   "Driver":265,"3 Wood":235,"5 Wood":215,"Hybrid":200,
   "4 Iron":190,"5 Iron":177,"6 Iron":164,"7 Iron":151,
   "8 Iron":138,"9 Iron":124,"PW":112,"GW":98,"SW":82,"LW":65
@@ -41,14 +42,37 @@ function haversineYards(lat1, lon1, lat2, lon2) {
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1.094)
 }
 
+function loadBag() {
+  try {
+    const stored = localStorage.getItem('my_bag')
+    if (stored) {
+      const arr = JSON.parse(stored)
+      return Object.fromEntries(arr.map(c => [c.name, c.yards]))
+    }
+  } catch {}
+  return defaultBag
+}
+
 export default function Caddie({ currentHole, setCurrentHole, selectedCourse, playerPos, pinPos, distanceToPin }) {
   const [weather, setWeather] = useState(null)
   const [status, setStatus] = useState('idle')
   const [advice, setAdvice] = useState('')
   const [adviceLoading, setAdviceLoading] = useState(false)
   const [coords, setCoords] = useState(null)
+  const [showMyBag, setShowMyBag] = useState(false)
+  const [bag, setBag] = useState(loadBag)
   const lastAdvicePosRef = useRef(null)
   const weatherRef = useRef(null)
+
+  // Reload bag when returning from MyBag screen
+  function handleBackFromBag() {
+    setBag(loadBag())
+    setShowMyBag(false)
+  }
+
+  if (showMyBag) {
+    return <MyBag onBack={handleBackFromBag} />
+  }
 
   const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
                     selectedCourse?.course?.tees?.female?.[0]?.holes || null
@@ -58,6 +82,10 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse, pl
   const holePar = h?.par
   const holeHcp = h?.handicap || h?.hcp
   const holeName = realHoles ? `Hole ${currentHole + 1} at ${courseName}` : h?.name
+
+  const ranked = Object.entries(bag)
+    .map(([name, dist]) => ({ name, dist, diff: Math.abs(dist - (distanceToPin || holeYards || 0)) }))
+    .sort((a, b) => a.diff - b.diff)
 
   // Auto-refresh advice when player moves 30+ yards
   useEffect(() => {
@@ -139,9 +167,9 @@ LIVE CONDITIONS:
 - Humidity: ${w.humidity}%
 - Rain: ${w.rain ? 'Yes — wet conditions' : 'No'}
 
-Player bag distances: ${JSON.stringify(bag)}
+Player's exact club distances: ${JSON.stringify(bag)}
 
-Tell them exactly: what club to hit for this distance in this wind, and one key shot tip.`
+Account for wind, temperature and conditions to recommend the exact club and adjusted yardage. Be specific.`
 
     try {
       const res = await fetch('/api/chat', {
@@ -165,19 +193,35 @@ Tell them exactly: what club to hit for this distance in this wind, and one key 
     if (weatherRef.current) generateAdvice(weatherRef.current)
   }, [currentHole, selectedCourse])
 
-  // Re-generate advice when pin moves significantly
   useEffect(() => {
     if (weatherRef.current && distanceToPin) {
       generateAdvice(weatherRef.current)
     }
   }, [pinPos])
 
-  const ranked = Object.entries(bag)
-    .map(([name, dist]) => ({ name, dist, diff: Math.abs(dist - (distanceToPin || holeYards || 0)) }))
-    .sort((a, b) => a.diff - b.diff)
-
   return (
     <div style={{ padding: 16 }}>
+
+      {/* My Bag button */}
+      <button onClick={() => setShowMyBag(true)}
+        style={{ width: '100%', background: '#fff',
+          border: '1px solid var(--bd)', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          cursor: 'pointer' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 20 }}>🏌️</span>
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>
+              Stock Yardages
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
+              Edit your club distances
+            </div>
+          </div>
+        </div>
+        <span style={{ fontSize: 16, color: 'var(--tx2)' }}>→</span>
+      </button>
 
       {/* Course banner */}
       {courseName && (
@@ -213,14 +257,12 @@ Tell them exactly: what club to hit for this distance in this wind, and one key 
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)',
-              textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-              Club
-            </div>
+              textTransform: 'uppercase', letterSpacing: '0.07em' }}>Club</div>
             <div style={{ fontSize: 22, fontWeight: 700,
               fontFamily: 'Bebas Neue', color: '#fff' }}>
               {ranked[0]?.name}
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>
               {ranked[0]?.dist}y club
             </div>
           </div>
