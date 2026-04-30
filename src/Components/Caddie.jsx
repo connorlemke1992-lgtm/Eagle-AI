@@ -63,23 +63,22 @@ function drawPuttLine(canvas, img, puttData) {
   const w = canvas.width
   const h = canvas.height
 
-  // Parse putt data
   const breakDir = puttData.breakDirection || 'straight'
-  const breakAmount = puttData.breakAmount || 'slight' // slight, moderate, significant
+  const breakAmount = puttData.breakAmount || 'slight'
   const startX = puttData.startX || 0.5
   const startY = puttData.startY || 0.85
   const endX = puttData.endX || 0.5
   const endY = puttData.endY || 0.15
 
-  // Convert percentages to pixels
   const sx = startX * w
   const sy = startY * h
   const ex = endX * w
   const ey = endY * h
 
-  // Calculate control point for curve based on break
-  const breakOffset = breakAmount === 'significant' ? 0.2
-    : breakAmount === 'moderate' ? 0.12 : 0.06
+  // More dramatic break offsets
+  const breakOffset = breakAmount === 'significant' ? 0.35
+    : breakAmount === 'moderate' ? 0.25 : 0.15
+
   const midX = (sx + ex) / 2
   const midY = (sy + ey) / 2
 
@@ -88,21 +87,27 @@ function drawPuttLine(canvas, img, puttData) {
 
   if (breakDir === 'left') {
     cpx = midX - (w * breakOffset)
+    cpy = midY
   } else if (breakDir === 'right') {
     cpx = midX + (w * breakOffset)
+    cpy = midY
   } else if (breakDir === 'left-to-right') {
-    cpx = midX + (w * breakOffset * 0.5)
-    cpy = midY + (h * breakOffset * 0.3)
+    cpx = midX + (w * breakOffset)
+    cpy = midY + (h * 0.1)
   } else if (breakDir === 'right-to-left') {
-    cpx = midX - (w * breakOffset * 0.5)
-    cpy = midY + (h * breakOffset * 0.3)
+    cpx = midX - (w * breakOffset)
+    cpy = midY + (h * 0.1)
+  } else {
+    // straight — tiny curve so it doesn't look flat
+    cpx = midX + (w * 0.02)
+    cpy = midY
   }
 
-  // Draw glow effect
+  // Glow effect
   ctx.shadowColor = '#4ade80'
   ctx.shadowBlur = 20
 
-  // Draw the curved putt line
+  // Draw curved putt line
   ctx.beginPath()
   ctx.moveTo(sx, sy)
   ctx.quadraticCurveTo(cpx, cpy, ex, ey)
@@ -112,7 +117,7 @@ function drawPuttLine(canvas, img, puttData) {
   ctx.setLineDash([])
   ctx.stroke()
 
-  // Draw arrow at end
+  // Arrow at end
   const angle = Math.atan2(ey - cpy, ex - cpx)
   const arrowSize = Math.max(w * 0.025, 12)
   ctx.shadowBlur = 0
@@ -131,7 +136,7 @@ function drawPuttLine(canvas, img, puttData) {
   ctx.lineWidth = Math.max(w * 0.006, 3)
   ctx.stroke()
 
-  // Draw start dot (ball position)
+  // Ball position dot
   ctx.shadowColor = '#fff'
   ctx.shadowBlur = 10
   ctx.beginPath()
@@ -140,7 +145,7 @@ function drawPuttLine(canvas, img, puttData) {
   ctx.fill()
   ctx.shadowBlur = 0
 
-  // Draw aim point label
+  // Aim point label
   ctx.font = `bold ${Math.max(w * 0.025, 14)}px Inter, sans-serif`
   ctx.fillStyle = '#4ade80'
   ctx.shadowColor = '#000'
@@ -350,10 +355,8 @@ Plain text analysis only, no markdown in the analysis field.`
             </div>
           </div>
 
-          {/* Photo or Canvas with putt line */}
           {photo && (
             <div style={{ marginBottom: 16, position: 'relative' }}>
-              {/* Hidden img for canvas drawing */}
               <img ref={imgRef} src={photo} alt="Golf"
                 style={{ display: 'none' }} crossOrigin="anonymous" />
 
@@ -361,8 +364,7 @@ Plain text analysis only, no markdown in the analysis field.`
                 <div>
                   <canvas ref={canvasRef}
                     style={{ width: '100%', borderRadius: 12,
-                      border: '2px solid #4ade80',
-                      display: 'block' }} />
+                      border: '2px solid #4ade80', display: 'block' }} />
                   <div style={{ background: 'var(--g1)', borderRadius: 8,
                     padding: '8px 12px', marginTop: 8,
                     display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -512,7 +514,6 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
   const courseName = selectedCourse?.course?.club_name || null
   const holeYards = realHoles ? h?.yardage : h?.yards
   const holePar = h?.par
-  const holeHcp = h?.handicap || h?.hcp
 
   const ranked = Object.entries(bag)
     .map(([name, dist]) => ({ name, dist,
