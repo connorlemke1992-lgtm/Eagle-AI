@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 function calculateHandicap(rounds) {
   if (rounds.length === 0) return null
 
-  // Calculate score differential for each round
   const differentials = rounds
     .filter(r => r.courseRating && r.slope && r.score)
     .map(r => {
@@ -13,10 +12,8 @@ function calculateHandicap(rounds) {
 
   if (differentials.length === 0) return null
 
-  // Use last 20 rounds max
   const last20 = differentials.slice(0, 20)
 
-  // Number of differentials to use based on rounds played
   let numToUse
   if (last20.length <= 3) numToUse = 1
   else if (last20.length <= 4) numToUse = 1
@@ -34,7 +31,6 @@ function calculateHandicap(rounds) {
   else if (last20.length <= 19) numToUse = 8
   else numToUse = 8
 
-  // Sort by lowest differential and take best ones
   const sorted = [...last20].sort((a, b) => a.differential - b.differential)
   const best = sorted.slice(0, numToUse)
   const avgDiff = best.reduce((a, b) => a + b.differential, 0) / best.length
@@ -98,6 +94,17 @@ export default function Handicap({ onBack }) {
     catch { return [] }
   })
 
+  const [showAddRound, setShowAddRound] = useState(false)
+  const [newRound, setNewRound] = useState({
+    course: '',
+    score: '',
+    courseRating: '',
+    slope: '',
+    date: new Date().toISOString().split('T')[0]
+  })
+  const [addError, setAddError] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
+
   const roundsWithRatings = roundHistory.filter(r => r.courseRating && r.slope)
   const result = calculateHandicap(roundsWithRatings)
   const handicapIndex = result?.index
@@ -127,6 +134,54 @@ export default function Handicap({ onBack }) {
 
   const trend = getTrend()
 
+  function saveRoundHistory(updated) {
+    setRoundHistory(updated)
+    localStorage.setItem('round_history', JSON.stringify(updated))
+  }
+
+  function addManualRound() {
+    setAddError('')
+    if (!newRound.course.trim()) { setAddError('Please enter a course name'); return }
+    if (!newRound.score) { setAddError('Please enter your score'); return }
+
+    const round = {
+      id: Date.now(),
+      date: new Date(newRound.date).toISOString(),
+      course: newRound.course.trim(),
+      score: parseInt(newRound.score),
+      scores: [],
+      holeStats: {},
+      shotHistory: [],
+      holesPlayed: 18,
+      courseRating: newRound.courseRating ? parseFloat(newRound.courseRating) : null,
+      slope: newRound.slope ? parseFloat(newRound.slope) : null,
+      manual: true,
+    }
+
+    const updated = [round, ...roundHistory].sort((a, b) =>
+      new Date(b.date) - new Date(a.date))
+    saveRoundHistory(updated)
+    setShowAddRound(false)
+    setNewRound({
+      course: '',
+      score: '',
+      courseRating: '',
+      slope: '',
+      date: new Date().toISOString().split('T')[0]
+    })
+  }
+
+  function deleteRound(id) {
+    if (deleteConfirm === id) {
+      const updated = roundHistory.filter(r => r.id !== id)
+      saveRoundHistory(updated)
+      setDeleteConfirm(null)
+    } else {
+      setDeleteConfirm(id)
+      setTimeout(() => setDeleteConfirm(null), 3000)
+    }
+  }
+
   return (
     <div style={{ padding: 16 }}>
 
@@ -137,10 +192,11 @@ export default function Handicap({ onBack }) {
           fontSize: 13, marginBottom: 16 }}>← Back</button>
 
       {/* Header */}
-      <div style={{ fontFamily: 'Bebas Neue', fontSize: 26,
-        marginBottom: 4 }}>My Handicap</div>
+      <div style={{ fontFamily: 'Bebas Neue', fontSize: 26, marginBottom: 4 }}>
+        My Handicap
+      </div>
       <div style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 16 }}>
-        Calculated using World Handicap System (WHS)
+        World Handicap System (WHS) calculation
       </div>
 
       {/* Main handicap display */}
@@ -171,8 +227,7 @@ export default function Handicap({ onBack }) {
         {result && (
           <div style={{ marginTop: 12, padding: '10px 12px',
             background: 'rgba(255,255,255,0.08)', borderRadius: 10 }}>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
-              marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>
               Best {result.numUsed} of {differentials.length} rounds used
             </div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
@@ -182,22 +237,118 @@ export default function Handicap({ onBack }) {
         )}
       </div>
 
-      {/* Rounds need info */}
-      {roundsWithRatings.length === 0 && roundHistory.length > 0 && (
-        <div style={{ background: '#fef3c7', borderRadius: 12,
-          padding: 14, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e',
-            marginBottom: 4 }}>
-            ⚠️ Course ratings needed
+      {/* Add Manual Round button */}
+      {!showAddRound ? (
+        <button onClick={() => setShowAddRound(true)}
+          style={{ width: '100%', background: '#fff',
+            border: '2px dashed var(--bd)', borderRadius: 10,
+            padding: '12px', marginBottom: 16, cursor: 'pointer',
+            fontSize: 14, fontWeight: 600, color: 'var(--tx2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            gap: 8 }}>
+          ➕ Add Past Round
+        </button>
+      ) : (
+        <div style={{ background: '#fff', border: '1px solid var(--bd)',
+          borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)',
+            marginBottom: 16 }}>➕ Add Past Round</div>
+
+          {/* Course name */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
+              marginBottom: 6 }}>Course Name</div>
+            <input value={newRound.course}
+              onChange={e => setNewRound(p => ({ ...p, course: e.target.value }))}
+              placeholder="e.g. CommonGround Golf Course"
+              style={{ width: '100%', border: '1px solid var(--bd)', borderRadius: 8,
+                padding: '10px 12px', fontSize: 14, color: 'var(--tx)',
+                boxSizing: 'border-box' }} />
           </div>
-          <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.5 }}>
-            You have {roundHistory.length} round{roundHistory.length !== 1 ? 's' : ''} saved
-            but no Course Rating or Slope data. These are needed for WHS calculation.
-            Enter them when finishing your next round.
+
+          {/* Date */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
+              marginBottom: 6 }}>Date Played</div>
+            <input type="date" value={newRound.date}
+              onChange={e => setNewRound(p => ({ ...p, date: e.target.value }))}
+              style={{ width: '100%', border: '1px solid var(--bd)', borderRadius: 8,
+                padding: '10px 12px', fontSize: 14, color: 'var(--tx)',
+                boxSizing: 'border-box' }} />
+          </div>
+
+          {/* Score */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
+              marginBottom: 6 }}>Total Score</div>
+            <input type="number" value={newRound.score}
+              onChange={e => setNewRound(p => ({ ...p, score: e.target.value }))}
+              placeholder="e.g. 88"
+              style={{ width: '100%', border: '1px solid var(--bd)', borderRadius: 8,
+                padding: '10px 12px', fontSize: 14, color: 'var(--tx)',
+                boxSizing: 'border-box' }} />
+          </div>
+
+          {/* Course Rating + Slope */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr',
+            gap: 10, marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
+                marginBottom: 6 }}>Course Rating</div>
+              <input type="number" value={newRound.courseRating}
+                onChange={e => setNewRound(p => ({ ...p, courseRating: e.target.value }))}
+                placeholder="e.g. 71.4" step="0.1"
+                style={{ width: '100%', border: '1px solid var(--bd)', borderRadius: 8,
+                  padding: '10px 12px', fontSize: 14, color: 'var(--tx)',
+                  boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
+                marginBottom: 6 }}>Slope Rating</div>
+              <input type="number" value={newRound.slope}
+                onChange={e => setNewRound(p => ({ ...p, slope: e.target.value }))}
+                placeholder="e.g. 125"
+                style={{ width: '100%', border: '1px solid var(--bd)', borderRadius: 8,
+                  padding: '10px 12px', fontSize: 14, color: 'var(--tx)',
+                  boxSizing: 'border-box' }} />
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 12 }}>
+            💡 Course Rating and Slope are needed for WHS handicap calculation.
+            Find them on the scorecard or ask the pro shop.
+          </div>
+
+          {addError && (
+            <div style={{ background: '#fee2e2', borderRadius: 8,
+              padding: '8px 12px', marginBottom: 12,
+              fontSize: 13, color: '#991b1b' }}>
+              {addError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={addManualRound}
+              style={{ flex: 1, background: 'var(--g1)', color: '#fff',
+                border: 'none', borderRadius: 10, padding: '12px',
+                cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>
+              ✅ Save Round
+            </button>
+            <button onClick={() => {
+              setShowAddRound(false)
+              setAddError('')
+            }}
+              style={{ flex: 1, background: 'var(--bg2)',
+                border: '1px solid var(--bd)', borderRadius: 10,
+                padding: '12px', cursor: 'pointer',
+                fontSize: 13, color: 'var(--tx2)' }}>
+              Cancel
+            </button>
           </div>
         </div>
       )}
 
+      {/* No rounds yet */}
       {roundHistory.length === 0 && (
         <div style={{ background: 'var(--bg2)', borderRadius: 12,
           padding: 20, textAlign: 'center', marginBottom: 16 }}>
@@ -206,22 +357,36 @@ export default function Handicap({ onBack }) {
             No rounds yet
           </div>
           <div style={{ fontSize: 13, color: 'var(--tx2)', lineHeight: 1.5 }}>
-            Finish a round on the Card tab to start tracking your handicap.
-            You need at least 3 rounds for a handicap calculation.
+            Finish a round on the Card tab or tap ➕ Add Past Round to get started.
+            You need at least 3 rounds with Course Rating and Slope for a handicap.
+          </div>
+        </div>
+      )}
+
+      {/* Course ratings needed warning */}
+      {roundsWithRatings.length === 0 && roundHistory.length > 0 && (
+        <div style={{ background: '#fef3c7', borderRadius: 12,
+          padding: 14, marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 4 }}>
+            ⚠️ Course ratings needed
+          </div>
+          <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.5 }}>
+            You have {roundHistory.length} round{roundHistory.length !== 1 ? 's' : ''} saved
+            but no Course Rating or Slope data. These are needed for WHS calculation.
           </div>
         </div>
       )}
 
       {/* Round differentials */}
       {differentials.length > 0 && (
-        <div>
+        <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
             textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
             Score Differentials
           </div>
           <div style={{ background: '#fff', border: '1px solid var(--bd)',
             borderRadius: 12, overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto',
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto',
               padding: '8px 14px', background: 'var(--bg2)',
               fontSize: 10, color: 'var(--tx2)', textTransform: 'uppercase',
               letterSpacing: '0.05em', fontWeight: 600 }}>
@@ -229,6 +394,7 @@ export default function Handicap({ onBack }) {
               <div style={{ textAlign: 'center', minWidth: 40 }}>Score</div>
               <div style={{ textAlign: 'center', minWidth: 40 }}>Diff</div>
               <div style={{ textAlign: 'center', minWidth: 30 }}>⭐</div>
+              <div style={{ minWidth: 40 }}></div>
             </div>
             {differentials.map((r, i) => {
               const isBest = bestRounds.includes(r.id)
@@ -237,15 +403,18 @@ export default function Handicap({ onBack }) {
               })
               return (
                 <div key={r.id} style={{ display: 'grid',
-                  gridTemplateColumns: '1fr auto auto auto',
+                  gridTemplateColumns: '1fr auto auto auto auto',
                   padding: '10px 14px',
                   borderBottom: i < differentials.length - 1
                     ? '1px solid var(--bd)' : 'none',
-                  background: isBest ? 'rgba(74,222,128,0.06)' : '#fff' }}>
+                  background: isBest ? 'rgba(74,222,128,0.06)' : '#fff',
+                  alignItems: 'center' }}>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 600,
                       color: 'var(--tx)' }}>{r.course}</div>
-                    <div style={{ fontSize: 10, color: 'var(--tx2)' }}>{date}</div>
+                    <div style={{ fontSize: 10, color: 'var(--tx2)' }}>
+                      {date}{r.manual ? ' · Manual' : ''}
+                    </div>
                   </div>
                   <div style={{ textAlign: 'center', minWidth: 40,
                     fontSize: 13, fontWeight: 600, color: 'var(--tx)',
@@ -262,6 +431,13 @@ export default function Handicap({ onBack }) {
                     display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {isBest ? '⭐' : ''}
                   </div>
+                  <button onClick={() => deleteRound(r.id)}
+                    style={{ background: deleteConfirm === r.id ? '#fee2e2' : 'transparent',
+                      border: deleteConfirm === r.id ? '1px solid #fca5a5' : 'none',
+                      borderRadius: 6, padding: '2px 6px', cursor: 'pointer',
+                      fontSize: 12, color: deleteConfirm === r.id ? '#991b1b' : 'var(--tx2)' }}>
+                    {deleteConfirm === r.id ? 'Sure?' : '🗑️'}
+                  </button>
                 </div>
               )
             })}
@@ -269,6 +445,45 @@ export default function Handicap({ onBack }) {
           <div style={{ fontSize: 11, color: 'var(--tx2)', marginTop: 8,
             textAlign: 'center' }}>
             ⭐ = rounds used in handicap calculation
+          </div>
+        </div>
+      )}
+
+      {/* All rounds without ratings */}
+      {roundHistory.filter(r => !r.courseRating || !r.slope).length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
+            textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
+            Rounds Missing Rating Data
+          </div>
+          <div style={{ background: '#fff', border: '1px solid var(--bd)',
+            borderRadius: 12, overflow: 'hidden' }}>
+            {roundHistory.filter(r => !r.courseRating || !r.slope).map((r, i, arr) => {
+              const date = new Date(r.date).toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric'
+              })
+              return (
+                <div key={r.id} style={{ padding: '10px 14px',
+                  borderBottom: i < arr.length - 1 ? '1px solid var(--bd)' : 'none',
+                  display: 'flex', alignItems: 'center',
+                  justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600,
+                      color: 'var(--tx)' }}>{r.course}</div>
+                    <div style={{ fontSize: 10, color: 'var(--tx2)' }}>
+                      {date} · Score: {r.score || '—'} · No rating data
+                    </div>
+                  </div>
+                  <button onClick={() => deleteRound(r.id)}
+                    style={{ background: deleteConfirm === r.id ? '#fee2e2' : 'transparent',
+                      border: deleteConfirm === r.id ? '1px solid #fca5a5' : 'none',
+                      borderRadius: 6, padding: '2px 6px', cursor: 'pointer',
+                      fontSize: 12, color: deleteConfirm === r.id ? '#991b1b' : 'var(--tx2)' }}>
+                    {deleteConfirm === r.id ? 'Sure?' : '🗑️'}
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

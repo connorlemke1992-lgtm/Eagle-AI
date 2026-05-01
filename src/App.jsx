@@ -114,6 +114,14 @@ export default function App() {
     setActiveTab('stats')
   }
 
+  function clearRound() {
+    setScores(new Array(18).fill(null))
+    setShotHistory([])
+    localStorage.removeItem('hole_stats')
+    localStorage.removeItem('visited_holes')
+    setCurrentHole(0)
+  }
+
   async function handleSignOut() {
     await signOut(auth)
     setUser(null)
@@ -270,6 +278,7 @@ export default function App() {
             setCurrentHole={setCurrentHole}
             selectedCourse={selectedCourse}
             onFinishRound={finishRound}
+            onClearRound={clearRound}
           />
         )}
         {activeTab === 'stats' && (

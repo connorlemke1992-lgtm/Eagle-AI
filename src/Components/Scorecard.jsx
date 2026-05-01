@@ -99,10 +99,11 @@ function saveHoleStats(stats) {
 }
 
 export default function Scorecard({ scores, setScores, currentHole,
-  setCurrentHole, selectedCourse, onFinishRound }) {
+  setCurrentHole, selectedCourse, onFinishRound, onClearRound }) {
   const [customInput, setCustomInput] = useState('')
   const [holeStats, setHoleStats] = useState(loadHoleStats)
   const [showFinishConfirm, setShowFinishConfirm] = useState(false)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [courseRating, setCourseRating] = useState('')
   const [slopeRating, setSlopeRating] = useState('')
 
@@ -318,9 +319,9 @@ export default function Scorecard({ scores, setScores, currentHole,
                       background: getHoleStat('sandSave') === v
                         ? 'rgba(45,138,84,0.1)' : '#fff',
                       color: getHoleStat('sandSave') === v ? 'var(--g2)' : 'var(--tx2)' }}>
-                    {v}
-                  </button>
-                ))}
+                      {v}
+                    </button>
+                  ))}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center',
@@ -359,8 +360,51 @@ export default function Scorecard({ scores, setScores, currentHole,
         </div>
       </div>
 
+      {/* Clear Round button */}
+      {played.length > 0 && !showFinishConfirm && !showClearConfirm && (
+        <button onClick={() => setShowClearConfirm(true)}
+          style={{ width: '100%', background: '#fff',
+            border: '1px solid #fca5a5', borderRadius: 12,
+            padding: '12px', marginBottom: 8,
+            fontWeight: 600, fontSize: 14, cursor: 'pointer',
+            color: '#991b1b' }}>
+          🗑️ Clear Round
+        </button>
+      )}
+
+      {/* Clear Round confirmation */}
+      {showClearConfirm && (
+        <div style={{ background: '#fee2e2', borderRadius: 12,
+          padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#991b1b', marginBottom: 8 }}>
+            Clear this round?
+          </div>
+          <div style={{ fontSize: 12, color: '#7f1d1d', marginBottom: 14 }}>
+            All scores and stats will be reset. This cannot be undone.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => {
+              onClearRound()
+              setShowClearConfirm(false)
+            }}
+              style={{ flex: 1, background: '#991b1b', border: 'none',
+                borderRadius: 10, padding: '12px', cursor: 'pointer',
+                fontWeight: 700, fontSize: 14, color: '#fff' }}>
+              Yes, clear round
+            </button>
+            <button onClick={() => setShowClearConfirm(false)}
+              style={{ flex: 1, background: '#fff',
+                border: '1px solid #fca5a5', borderRadius: 10,
+                padding: '12px', cursor: 'pointer',
+                fontWeight: 600, fontSize: 13, color: '#991b1b' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Finish Round button */}
-      {played.length >= 9 && !showFinishConfirm && (
+      {played.length >= 9 && !showFinishConfirm && !showClearConfirm && (
         <button onClick={() => setShowFinishConfirm(true)}
           style={{ width: '100%', background: '#4ade80', border: 'none',
             borderRadius: 12, padding: '14px', marginBottom: 16,
@@ -369,7 +413,7 @@ export default function Scorecard({ scores, setScores, currentHole,
         </button>
       )}
 
-      {/* Finish Round confirmation with Course Rating + Slope */}
+      {/* Finish Round confirmation */}
       {showFinishConfirm && (
         <div style={{ background: 'var(--g1)', borderRadius: 12,
           padding: 16, marginBottom: 16 }}>
@@ -380,13 +424,11 @@ export default function Scorecard({ scores, setScores, currentHole,
             {played.length} holes · {totalStrokes} strokes · {getPlusMinus(diff)} vs par
           </div>
 
-          {/* Course Rating + Slope */}
           <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 10,
             padding: 12, marginBottom: 14 }}>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)',
               marginBottom: 10, lineHeight: 1.5 }}>
-              📊 Enter Course Rating and Slope for handicap calculation
-              (find these on the scorecard):
+              📊 Enter Course Rating and Slope for handicap calculation:
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
@@ -412,8 +454,7 @@ export default function Scorecard({ scores, setScores, currentHole,
                     boxSizing: 'border-box' }} />
               </div>
             </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)',
-              marginTop: 8 }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 8 }}>
               Skip if you don't have these — your round will still be saved
             </div>
           </div>
