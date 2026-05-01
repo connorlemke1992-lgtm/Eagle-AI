@@ -9,8 +9,9 @@ const TEE_OPTIONS = [
 
 async function fetchScorecardData(courseName) {
   try {
+    const shortName = courseName.split(' ').slice(0, 2).join(' ')
     const searchRes = await fetch(
-      `/api/golfcourseapi?endpoint=${encodeURIComponent(`search?search_query=${courseName}`)}`
+      `/api/golfcourseapi?endpoint=${encodeURIComponent(`search?search_query=${shortName}`)}`
     )
     const searchData = await searchRes.json()
     const course = searchData.courses?.[0]
@@ -135,7 +136,6 @@ export default function CourseSearch({ onCourseSelect }) {
       const courseData = await courseRes.json()
       const coordData = await coordRes.json()
 
-      // Also fetch scorecard from GolfCourseAPI for par/hcp
       const scorecard = await fetchScorecardData(course.club_name)
 
       const tees = courseData.course?.tees || courseData.tees || []
@@ -155,7 +155,7 @@ export default function CourseSearch({ onCourseSelect }) {
           tees,
           coordinates,
           isGolfAPI: true,
-          scorecard, // store full scorecard for par/hcp lookup
+          scorecard,
         }
       }
 
@@ -186,8 +186,6 @@ export default function CourseSearch({ onCourseSelect }) {
       const chosenTee = tees[selectedTeeIndex] || tees[0]
       const scorecard = builtData.course.scorecard
 
-      // Pick matching tee from GolfCourseAPI scorecard
-      // Try to match by tee name, fallback to male[0]
       const teeName = chosenTee?.teeName?.toLowerCase() || ''
       const scorecardTees = scorecard?.tees
       let scorecardHoles = null
@@ -204,18 +202,15 @@ export default function CourseSearch({ onCourseSelect }) {
         scorecardHoles = matched?.holes || null
       }
 
-      // Build holes array merging yardage from GolfAPI + par/hcp from GolfCourseAPI
       const holes = Array.from({ length: 18 }, (_, i) => {
         const n = i + 1
         const yardage =
           chosenTee?.[`length${n}`] ||
           chosenTee?.[`Length${n}`] ||
           0
-
         const scorecardHole = scorecardHoles?.[i]
         const par = scorecardHole?.par || null
         const handicap = scorecardHole?.handicap || null
-
         return { hole: n, yardage, par, handicap }
       })
 
@@ -267,7 +262,6 @@ export default function CourseSearch({ onCourseSelect }) {
               const totalYards = Array.from({ length: 18 }, (_, j) =>
                 tee[`length${j + 1}`] || tee[`Length${j + 1}`] || 0
               ).reduce((a, b) => a + b, 0)
-
               return (
                 <button key={tee.teeID || i}
                   onClick={() => setSelectedTeeIndex(i)}
