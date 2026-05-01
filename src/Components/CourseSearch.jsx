@@ -32,15 +32,17 @@ export default function CourseSearch({ onCourseSelect }) {
 
       // 2. Search GolfAPI.io via serverless function
       try {
-        const endpoint = encodeURIComponent(`clubs?city=${encodeURIComponent(val)}&country=usa`)
+        const endpoint = encodeURIComponent(
+          `clubs?name=${encodeURIComponent(val)}&country=usa`
+        )
         const res = await fetch(`/api/golfapi?endpoint=${endpoint}`)
         const data = await res.json()
 
-        console.log('GolfAPI response:', data)
+        console.log('GolfAPI search response:', data)
 
         const apiResults = (data.clubs || []).map(c => ({
-          id: c.id,
-          club_name: c.name || c.clubName || c.club_name,
+          id: c.clubID || c.id,
+          club_name: c.clubName || c.name || c.club_name,
           location: {
             city: c.city,
             state: c.state,
@@ -48,6 +50,7 @@ export default function CourseSearch({ onCourseSelect }) {
             latitude: c.lat || c.latitude,
             longitude: c.lng || c.longitude,
           },
+          courses: c.courses || [],
           isLocal: false,
         }))
 
@@ -59,7 +62,7 @@ export default function CourseSearch({ onCourseSelect }) {
         ]
         setResults(combined)
       } catch (err) {
-        console.error('GolfAPI error:', err)
+        console.error('GolfAPI search error:', err)
         setResults(localResults)
         if (localResults.length === 0) {
           setError('Could not search courses — check your connection')
@@ -95,9 +98,14 @@ export default function CourseSearch({ onCourseSelect }) {
       console.log('Club data:', clubData)
 
       // Get first course ID from club
-      const courseId = clubData.club?.courses?.[0]?.id ||
-                       clubData.courses?.[0]?.id ||
+      const coursesList = clubData.club?.courses ||
+                          clubData.courses ||
+                          course.courses || []
+      const courseId = coursesList[0]?.courseID ||
+                       coursesList[0]?.id ||
                        course.id
+
+      console.log('Using courseId:', courseId)
 
       // Step 2 — fetch course and coordinates using course ID
       const [courseRes, coordRes] = await Promise.all([
@@ -111,20 +119,36 @@ export default function CourseSearch({ onCourseSelect }) {
       console.log('Course data:', courseData)
       console.log('Coord data:', coordData)
 
+      // Build course object
+      const tees = courseData.course?.tees ||
+                   courseData.tees || {}
+
+      const coordinates = coordData.course?.coordinates ||
+                          coordData.coordinates || []
+
+      // Get location from coordinates if not in club data
+      const lat = course.location?.latitude ||
+                  coordData.course?.location?.lat ||
+                  clubData.club?.lat
+      const lng = course.location?.longitude ||
+                  coordData.course?.location?.lng ||
+                  clubData.club?.lng
+
       const builtCourse = {
         course: {
           club_name: course.club_name,
           location: {
             city: course.location?.city,
             state: course.location?.state,
-            latitude: course.location?.latitude,
-            longitude: course.location?.longitude,
+            latitude: lat,
+            longitude: lng,
           },
-          tees: courseData.tees || courseData.course?.tees || {},
-          coordinates: coordData.coordinates || coordData.course?.coordinates || [],
+          tees,
+          coordinates,
         }
       }
 
+      console.log('Built course:', builtCourse)
       localStorage.setItem(cacheKey, JSON.stringify(builtCourse))
       onCourseSelect(builtCourse)
     } catch(e) {
