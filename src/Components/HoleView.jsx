@@ -36,7 +36,7 @@ function bestClub(yards, bag) {
 }
 
 // GolfAPI poi mapping confirmed from real data:
-// poi 12 = tee box (sideFW: 1=back, 2=middle, 3=forward)
+// poi 12 = tee box
 // poi 1  = green center
 // poi 11 = front of green
 // poi 3  = back of green
@@ -105,12 +105,24 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const bag = loadBag()
 
-  const holes = courseData?.course?.tees?.male?.[0]?.holes ||
+  // Support both local courses and GolfAPI courses
+  const isGolfAPI = courseData?.course?.isGolfAPI
+  const chosenTee = courseData?.course?.chosenTee
+  const holes = courseData?.course?.holes ||
+                courseData?.course?.tees?.male?.[0]?.holes ||
                 courseData?.course?.tees?.female?.[0]?.holes || []
   const h = holes[currentHole]
+
+  // Get yardage — from holes array or GolfAPI length fields
+  const hYards = h?.yardage || h?.yards ||
+                 chosenTee?.[`length${currentHole + 1}`] || null
+  const hPar = h?.par || null
+  const hHcp = h?.handicap || h?.hcp || null
+
   const coordinates = courseData?.course?.coordinates || []
   const holeShots = shotHistory.filter(s => s.hole === currentHole + 1)
-  const teeLabel = courseData?.selectedTeeLabel ||
+  const teeLabel = courseData?.course?.selectedTeeLabel ||
+    courseData?.selectedTeeLabel ||
     (selectedTee === 1 ? 'Back' : selectedTee === 3 ? 'Forward' : 'Middle')
 
   useEffect(() => {
@@ -409,7 +421,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
     const teeCoords = getTeeCoords(currentHole)
     const greenCoords = getGreenCoords(currentHole)
 
-    // Tee box — white dot with T label
+    // Tee box — white dot with T
     teeMarkerRef.current = new window.google.maps.Marker({
       position: teeCoords, map,
       icon: {
@@ -421,7 +433,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
       label: { text: 'T', color: '#333', fontSize: '10px', fontWeight: 'bold' }
     })
 
-    // Pin — green dot on green center
+    // Pin — green dot on green
     pinMarkerRef.current = new window.google.maps.Marker({
       position: greenCoords, map, draggable: true,
       icon: {
@@ -546,6 +558,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         setCourseData(data)
         onCourseSelect(data)
         if (data?.selectedTee) setSelectedTee(data.selectedTee)
+        if (data?.course?.selectedTee) setSelectedTee(data.course.selectedTee)
         setVisitedHoles([])
         localStorage.removeItem('visited_holes')
         mapInstanceRef.current = null
@@ -862,15 +875,15 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
             Hole {currentHole + 1}
           </div>
           <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
-            Par {h?.par || '—'} · {h?.yardage || h?.yards || '—'} yds ·
-            Hcp {h?.handicap || h?.hcp || '—'}
+            {hPar ? `Par ${hPar}` : 'Par —'} · {hYards ? `${hYards} yds` : '— yds'} ·
+            {hHcp ? ` Hcp ${hHcp}` : ' Hcp —'}
           </div>
         </div>
-        <button onClick={() => setCurrentHole(Math.min((holes.length || 18) - 1, currentHole + 1))}
-          disabled={currentHole >= (holes.length || 18) - 1}
+        <button onClick={() => setCurrentHole(Math.min(17, currentHole + 1))}
+          disabled={currentHole >= 17}
           style={{ border: '1px solid var(--bd)', borderRadius: 8,
             background: '#fff', padding: '6px 14px', cursor: 'pointer',
-            opacity: currentHole >= (holes.length || 18) - 1 ? 0.3 : 1 }}>Next →</button>
+            opacity: currentHole >= 17 ? 0.3 : 1 }}>Next →</button>
       </div>
 
       <div style={{ background: 'var(--bg2)', borderRadius: 8,

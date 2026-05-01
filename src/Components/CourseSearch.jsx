@@ -2,9 +2,9 @@ import { useState, useRef } from 'react'
 import { localCourses } from '../localCourses'
 
 const TEE_OPTIONS = [
-  { label: 'Back', desc: 'Tips / Championship', icon: '⬛', sideFW: 1, color: '#1a1a1a' },
-  { label: 'Middle', desc: 'Standard / Men\'s', icon: '⬜', sideFW: 2, color: '#4a7c59' },
-  { label: 'Forward', desc: 'Senior / Ladies', icon: '🟡', sideFW: 3, color: '#d97706' },
+  { label: 'Back', desc: 'Tips / Championship', icon: '⬛', sideFW: 1 },
+  { label: 'Middle', desc: 'Standard / Men\'s', icon: '⬜', sideFW: 2 },
+  { label: 'Forward', desc: 'Senior / Ladies', icon: '🟡', sideFW: 3 },
 ]
 
 export default function CourseSearch({ onCourseSelect }) {
@@ -13,7 +13,7 @@ export default function CourseSearch({ onCourseSelect }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [pendingCourse, setPendingCourse] = useState(null)
-  const [selectedTee, setSelectedTee] = useState(2)
+  const [selectedTeeIndex, setSelectedTeeIndex] = useState(0)
   const [showTeeSelector, setShowTeeSelector] = useState(false)
   const debounceRef = useRef(null)
 
@@ -77,9 +77,8 @@ export default function CourseSearch({ onCourseSelect }) {
   }
 
   async function selectCourse(course) {
-    // Local course — show tee selector first
     if (course.isLocal) {
-      setPendingCourse(course)
+      setPendingCourse({ ...course, isLocal: true })
       setShowTeeSelector(true)
       return
     }
@@ -117,7 +116,8 @@ export default function CourseSearch({ onCourseSelect }) {
       const courseData = await courseRes.json()
       const coordData = await coordRes.json()
 
-      const tees = courseData.course?.tees || courseData.tees || {}
+      // GolfAPI returns tees as array with length1-length18
+      const tees = courseData.course?.tees || courseData.tees || []
       const coordinates = coordData.course?.coordinates || coordData.coordinates || []
       const lat = course.location?.latitude || clubData.club?.lat
       const lng = course.location?.longitude || clubData.club?.lng
@@ -133,6 +133,7 @@ export default function CourseSearch({ onCourseSelect }) {
           },
           tees,
           coordinates,
+          isGolfAPI: true,
         }
       }
 
@@ -147,23 +148,44 @@ export default function CourseSearch({ onCourseSelect }) {
 
   function confirmTeeSelection() {
     if (!pendingCourse) return
-    const teeOption = TEE_OPTIONS.find(t => t.sideFW === selectedTee)
 
     if (pendingCourse.isLocal) {
       const data = {
         ...pendingCourse.fullData,
-        selectedTee: selectedTee,
-        selectedTeeLabel: teeOption.label,
+        selectedTee: 2,
+        selectedTeeLabel: 'Middle',
+        selectedTeeIndex: 0,
       }
-      localStorage.setItem('selected_tee', String(selectedTee))
+      localStorage.setItem('selected_tee', '2')
       onCourseSelect(data)
     } else {
+      const builtData = pendingCourse.builtData
+      const tees = builtData.course.tees || []
+      const chosenTee = tees[selectedTeeIndex] || tees[0]
+
+      // Build holes array from length1-length18
+      const holes = Array.from({ length: 18 }, (_, i) => ({
+        hole: i + 1,
+        yardage: chosenTee?.[`length${i + 1}`] || 0,
+        par: null, // GolfAPI doesn't include par per hole in tee data
+      }))
+
       const data = {
-        ...pendingCourse.builtData,
-        selectedTee: selectedTee,
-        selectedTeeLabel: teeOption.label,
+        ...builtData,
+        course: {
+          ...builtData.course,
+          selectedTee: 2,
+          selectedTeeLabel: chosenTee?.teeName || 'Middle',
+          selectedTeeIndex,
+          chosenTee,
+          holes, // flat holes array for easy access
+          courseRating: chosenTee?.courseRatingMen,
+          slope: chosenTee?.slopeMen,
+        }
       }
-      localStorage.setItem('selected_tee', String(selectedTee))
+
+      localStorage.setItem('selected_tee', '2')
+      localStorage.setItem('selected_course', JSON.stringify(data))
       onCourseSelect(data)
     }
 
@@ -173,6 +195,9 @@ export default function CourseSearch({ onCourseSelect }) {
 
   // Tee selector screen
   if (showTeeSelector && pendingCourse) {
+    const tees = pendingCourse.builtData?.course?.tees || []
+    const isGolfAPI = pendingCourse.builtData?.course?.isGolfAPI
+
     return (
       <div style={{ padding: 16 }}>
         <button onClick={() => { setShowTeeSelector(false); setPendingCourse(null) }}
@@ -187,50 +212,96 @@ export default function CourseSearch({ onCourseSelect }) {
           ⛳ {pendingCourse.club_name}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10,
-          marginBottom: 24 }}>
-          {TEE_OPTIONS.map(tee => (
-            <button key={tee.sideFW}
-              onClick={() => setSelectedTee(tee.sideFW)}
-              style={{ background: selectedTee === tee.sideFW
-                ? 'var(--g1)' : '#fff',
-                border: selectedTee === tee.sideFW
-                  ? '2px solid var(--g3)' : '1px solid var(--bd)',
-                borderRadius: 14, padding: '16px 18px', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 14,
-                textAlign: 'left' }}>
-              <div style={{ fontSize: 32 }}>{tee.icon}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 16, fontWeight: 700,
-                  color: selectedTee === tee.sideFW ? '#fff' : 'var(--tx)',
-                  marginBottom: 2 }}>
-                  {tee.label} Tees
+        {/* GolfAPI tees — show actual tee names */}
+        {isGolfAPI && tees.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10,
+            marginBottom: 24 }}>
+            {tees.map((tee, i) => {
+              const totalYards = Array.from({ length: 18 }, (_, j) =>
+                tee[`length${j + 1}`] || 0
+              ).reduce((a, b) => a + b, 0)
+              return (
+                <button key={tee.teeID || i}
+                  onClick={() => setSelectedTeeIndex(i)}
+                  style={{ background: selectedTeeIndex === i ? 'var(--g1)' : '#fff',
+                    border: selectedTeeIndex === i
+                      ? '2px solid var(--g3)' : '1px solid var(--bd)',
+                    borderRadius: 14, padding: '16px 18px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    textAlign: 'left' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%',
+                    background: tee.teeColor || '#888',
+                    border: '2px solid rgba(0,0,0,0.2)',
+                    flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700,
+                      color: selectedTeeIndex === i ? '#fff' : 'var(--tx)',
+                      marginBottom: 2 }}>
+                      {tee.teeName} Tees
+                    </div>
+                    <div style={{ fontSize: 12,
+                      color: selectedTeeIndex === i
+                        ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>
+                      {totalYards > 0 ? `${totalYards.toLocaleString()} total yards` : ''}
+                      {tee.courseRatingMen ? ` · Rating ${tee.courseRatingMen}` : ''}
+                      {tee.slopeMen ? ` · Slope ${tee.slopeMen}` : ''}
+                    </div>
+                  </div>
+                  {selectedTeeIndex === i && (
+                    <div style={{ fontSize: 20 }}>✅</div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          // Local course — show generic Back/Middle/Forward
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10,
+            marginBottom: 24 }}>
+            {TEE_OPTIONS.map(tee => (
+              <button key={tee.sideFW}
+                onClick={() => setSelectedTeeIndex(tee.sideFW - 1)}
+                style={{ background: selectedTeeIndex === tee.sideFW - 1
+                  ? 'var(--g1)' : '#fff',
+                  border: selectedTeeIndex === tee.sideFW - 1
+                    ? '2px solid var(--g3)' : '1px solid var(--bd)',
+                  borderRadius: 14, padding: '16px 18px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  textAlign: 'left' }}>
+                <div style={{ fontSize: 32 }}>{tee.icon}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700,
+                    color: selectedTeeIndex === tee.sideFW - 1 ? '#fff' : 'var(--tx)',
+                    marginBottom: 2 }}>
+                    {tee.label} Tees
+                  </div>
+                  <div style={{ fontSize: 12,
+                    color: selectedTeeIndex === tee.sideFW - 1
+                      ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>
+                    {tee.desc}
+                  </div>
                 </div>
-                <div style={{ fontSize: 12,
-                  color: selectedTee === tee.sideFW
-                    ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>
-                  {tee.desc}
-                </div>
-              </div>
-              {selectedTee === tee.sideFW && (
-                <div style={{ fontSize: 20 }}>✅</div>
-              )}
-            </button>
-          ))}
-        </div>
+                {selectedTeeIndex === tee.sideFW - 1 && (
+                  <div style={{ fontSize: 20 }}>✅</div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div style={{ background: 'var(--bg2)', borderRadius: 10,
           padding: '10px 14px', marginBottom: 20, fontSize: 12,
           color: 'var(--tx2)', lineHeight: 1.5 }}>
-          🎯 Eagle AI will use these tee box GPS coordinates and yardages for every hole.
-          You can change this anytime by selecting a new course.
+          🎯 Eagle AI will use these yardages for club recommendations on every hole.
         </div>
 
         <button onClick={confirmTeeSelection}
           style={{ width: '100%', background: 'var(--g1)', color: '#fff',
             border: 'none', borderRadius: 12, padding: '16px',
             fontWeight: 700, fontSize: 16, cursor: 'pointer' }}>
-          Let's Play {TEE_OPTIONS.find(t => t.sideFW === selectedTee)?.label} Tees →
+          {isGolfAPI && tees[selectedTeeIndex]
+            ? `Let's Play ${tees[selectedTeeIndex].teeName} Tees →`
+            : 'Let's Play →'}
         </button>
       </div>
     )
