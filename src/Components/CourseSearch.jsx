@@ -87,9 +87,22 @@ export default function CourseSearch({ onCourseSelect }) {
         return
       }
 
+      // Step 1 — fetch club to get course IDs
+      const clubRes = await fetch(
+        `/api/golfapi?endpoint=${encodeURIComponent(`clubs/${course.id}`)}`
+      )
+      const clubData = await clubRes.json()
+      console.log('Club data:', clubData)
+
+      // Get first course ID from club
+      const courseId = clubData.club?.courses?.[0]?.id ||
+                       clubData.courses?.[0]?.id ||
+                       course.id
+
+      // Step 2 — fetch course and coordinates using course ID
       const [courseRes, coordRes] = await Promise.all([
-        fetch(`/api/golfapi?endpoint=${encodeURIComponent(`courses/${course.id}`)}`),
-        fetch(`/api/golfapi?endpoint=${encodeURIComponent(`coordinates/${course.id}`)}`)
+        fetch(`/api/golfapi?endpoint=${encodeURIComponent(`courses/${courseId}`)}`),
+        fetch(`/api/golfapi?endpoint=${encodeURIComponent(`coordinates/${courseId}`)}`)
       ])
 
       const courseData = await courseRes.json()
