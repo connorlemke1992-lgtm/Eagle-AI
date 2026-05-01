@@ -122,10 +122,18 @@ export default function Scorecard({ scores, setScores, currentHole,
   const front9Strokes = scores.slice(0, 9).reduce((a, b) => b !== null ? a + b : a, 0)
   const front9Par = holes.slice(0, 9).reduce((a, h) => a + h.par, 0)
   const front9Played = scores.slice(0, 9).filter(s => s !== null).length
+  const front9Putts = Object.entries(holeStats)
+    .filter(([i]) => parseInt(i) < 9 && holeStats[i]?.putts)
+    .reduce((a, [, s]) => a + (s.putts || 0), 0)
 
   const back9Strokes = scores.slice(9).reduce((a, b) => b !== null ? a + b : a, 0)
   const back9Par = holes.slice(9).reduce((a, h) => a + h.par, 0)
   const back9Played = scores.slice(9).filter(s => s !== null).length
+  const back9Putts = Object.entries(holeStats)
+    .filter(([i]) => parseInt(i) >= 9 && holeStats[i]?.putts)
+    .reduce((a, [, s]) => a + (s.putts || 0), 0)
+
+  const totalPutts = front9Putts + back9Putts
 
   function setScore(val) {
     const next = [...scores]
@@ -175,19 +183,20 @@ export default function Scorecard({ scores, setScores, currentHole,
       )}
 
       {/* Summary stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)',
         gap: 8, marginBottom: 16 }}>
         {[
           { label: 'Strokes', val: played.length > 0 ? totalStrokes : '—', color: 'var(--tx)' },
           { label: 'vs Par', val: played.length > 0 ? getPlusMinus(diff) : '—',
             color: getPlusMinusColor(played.length > 0 ? diff : null) },
           { label: 'Holes', val: played.length + '/18', color: 'var(--tx)' },
+          { label: 'Putts', val: totalPutts > 0 ? totalPutts : '—', color: 'var(--tx)' },
         ].map(s => (
           <div key={s.label} style={{ background: 'var(--bg2)', borderRadius: 10,
             padding: '10px 8px', textAlign: 'center' }}>
             <div style={{ fontSize: 10, color: 'var(--tx2)', textTransform: 'uppercase',
               letterSpacing: '0.05em' }}>{s.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: s.color, marginTop: 2 }}>
+            <div style={{ fontSize: 20, fontWeight: 600, color: s.color, marginTop: 2 }}>
               {s.val}
             </div>
           </div>
@@ -319,9 +328,9 @@ export default function Scorecard({ scores, setScores, currentHole,
                       background: getHoleStat('sandSave') === v
                         ? 'rgba(45,138,84,0.1)' : '#fff',
                       color: getHoleStat('sandSave') === v ? 'var(--g2)' : 'var(--tx2)' }}>
-                      {v}
-                    </button>
-                  ))}
+                    {v}
+                  </button>
+                ))}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center',
@@ -491,7 +500,7 @@ export default function Scorecard({ scores, setScores, currentHole,
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ background: 'var(--g1)', color: '#fff' }}>
-              {['Hole','Par','Yds','Score','+/-'].map(col => (
+              {['Hole','Par','Yds','Score','+/-','Putts'].map(col => (
                 <th key={col} style={{ padding: '8px 4px', textAlign: 'center',
                   fontWeight: 500, fontSize: 10 }}>{col}</th>
               ))}
@@ -501,6 +510,7 @@ export default function Scorecard({ scores, setScores, currentHole,
             {holes.slice(0, 9).map((h, i) => {
               const s = scores[i]
               const d = s !== null ? s - h.par : null
+              const putts = holeStats[i]?.putts
               return (
                 <tr key={i} onClick={() => setCurrentHole(i)}
                   style={{ background: i === currentHole
@@ -517,10 +527,16 @@ export default function Scorecard({ scores, setScores, currentHole,
                     fontSize: 11, fontWeight: 600, color: getPlusMinusColor(d) }}>
                     {getPlusMinus(d)}
                   </td>
+                  <td style={{ padding: '7px 4px', textAlign: 'center',
+                    fontSize: 11, color: putts === 1 ? '#166534'
+                      : putts >= 3 ? '#991b1b' : 'var(--tx2)' }}>
+                    {putts || '—'}
+                  </td>
                 </tr>
               )
             })}
 
+            {/* OUT row */}
             <tr style={{ background: 'rgba(45,138,84,0.08)',
               borderTop: '2px solid var(--g3)', borderBottom: '2px solid var(--g3)' }}>
               <td colSpan={2} style={{ padding: '6px 4px', textAlign: 'center',
@@ -537,12 +553,17 @@ export default function Scorecard({ scores, setScores, currentHole,
                   ? front9Strokes - front9Par : null) }}>
                 {front9Played > 0 ? getPlusMinus(front9Strokes - front9Par) : '—'}
               </td>
+              <td style={{ padding: '6px 4px', textAlign: 'center',
+                fontWeight: 700, fontSize: 11 }}>
+                {front9Putts > 0 ? front9Putts : '—'}
+              </td>
             </tr>
 
             {holes.slice(9).map((h, i) => {
               const idx = i + 9
               const s = scores[idx]
               const d = s !== null ? s - h.par : null
+              const putts = holeStats[idx]?.putts
               return (
                 <tr key={idx} onClick={() => setCurrentHole(idx)}
                   style={{ background: idx === currentHole
@@ -559,10 +580,16 @@ export default function Scorecard({ scores, setScores, currentHole,
                     fontSize: 11, fontWeight: 600, color: getPlusMinusColor(d) }}>
                     {getPlusMinus(d)}
                   </td>
+                  <td style={{ padding: '7px 4px', textAlign: 'center',
+                    fontSize: 11, color: putts === 1 ? '#166534'
+                      : putts >= 3 ? '#991b1b' : 'var(--tx2)' }}>
+                    {putts || '—'}
+                  </td>
                 </tr>
               )
             })}
 
+            {/* IN row */}
             <tr style={{ background: 'rgba(45,138,84,0.08)',
               borderTop: '2px solid var(--g3)', borderBottom: '2px solid var(--g3)' }}>
               <td colSpan={2} style={{ padding: '6px 4px', textAlign: 'center',
@@ -579,8 +606,13 @@ export default function Scorecard({ scores, setScores, currentHole,
                   ? back9Strokes - back9Par : null) }}>
                 {back9Played > 0 ? getPlusMinus(back9Strokes - back9Par) : '—'}
               </td>
+              <td style={{ padding: '6px 4px', textAlign: 'center',
+                fontWeight: 700, fontSize: 11 }}>
+                {back9Putts > 0 ? back9Putts : '—'}
+              </td>
             </tr>
 
+            {/* TOTAL row */}
             <tr style={{ background: 'var(--g1)' }}>
               <td colSpan={2} style={{ padding: '8px 4px', textAlign: 'center',
                 fontWeight: 700, fontSize: 12, color: '#fff' }}>TOTAL</td>
@@ -596,6 +628,10 @@ export default function Scorecard({ scores, setScores, currentHole,
                 fontWeight: 700, fontSize: 12,
                 color: diff < 0 ? '#4ade80' : diff > 0 ? '#fca5a5' : '#fff' }}>
                 {played.length > 0 ? getPlusMinus(diff) : '—'}
+              </td>
+              <td style={{ padding: '8px 4px', textAlign: 'center',
+                fontWeight: 700, fontSize: 12, color: '#4ade80' }}>
+                {totalPutts > 0 ? totalPutts : '—'}
               </td>
             </tr>
           </tbody>
