@@ -1,103 +1,116 @@
-import { useState } from 'react'
-
-const fallbackHoles = [
-  {par:4,yards:412,hcp:7,name:"The Opener",type:"Dogleg Right"},
-  {par:5,yards:531,hcp:3,name:"The Long Walk",type:"Straight"},
-  {par:3,yards:178,hcp:15,name:"Carry or Die",type:"Island Green"},
-  {par:4,yards:387,hcp:11,name:"Risk & Reward",type:"Dogleg"},
-  {par:4,yards:445,hcp:1,name:"The Beast",type:"Long Par 4"},
-  {par:3,yards:152,hcp:17,name:"The Dip",type:"Downhill"},
-  {par:5,yards:568,hcp:5,name:"Snake Run",type:"Double Dogleg"},
-  {par:4,yards:398,hcp:9,name:"Fairway Wide",type:"Straight"},
-  {par:4,yards:421,hcp:13,name:"The Climb",type:"Uphill"},
-  {par:4,yards:403,hcp:8,name:"Turn Here",type:"Dogleg"},
-  {par:5,yards:544,hcp:2,name:"Eagle Alley",type:"Par 5"},
-  {par:3,yards:169,hcp:16,name:"The Mirror",type:"Water Left"},
-  {par:4,yards:415,hcp:10,name:"The Elbow",type:"Dogleg Right"},
-  {par:4,yards:462,hcp:4,name:"The Grind",type:"Straight"},
-  {par:3,yards:195,hcp:14,name:"Tough Carry",type:"Long Par 3"},
-  {par:5,yards:552,hcp:6,name:"Eagle's Nest",type:"Risk/Reward"},
-  {par:4,yards:391,hcp:12,name:"Driveable?",type:"Short Par 4"},
-  {par:4,yards:437,hcp:18,name:"The Closer",type:"Finishing"},
-]
-
-const defaultBag = {
-  "Driver":265,"3 Wood":235,"5 Wood":215,"Hybrid":200,
-  "4 Iron":190,"5 Iron":177,"6 Iron":164,"7 Iron":151,
-  "8 Iron":138,"9 Iron":124,"PW":112,"GW":98,"SW":82,"LW":65
-}
-
-const quickQuestions = [
-  "What club should I hit from here?",
-  "How do I hit a low punch shot into the wind?",
-  "Tips for a downhill lie in the rough?",
-  "How should I read a fast downhill putt?",
-  "What's the best way to escape a fairway bunker?",
-  "How do I stop pulling my irons left?",
-  "Give me a pre-shot routine I can use every hole.",
-]
-
-function loadBag() {
-  try {
-    const stored = localStorage.getItem('my_bag')
-    if (stored) {
-      const arr = JSON.parse(stored)
-      return Object.fromEntries(arr.map(c => [c.name, c.yards]))
-    }
-  } catch {}
-  return defaultBag
-}
+import { useState, useRef, useEffect } from 'react'
 
 export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
   const [messages, setMessages] = useState([
-    { role: 'ai', text: "I'm Eagle, your AI golf coach. I know your exact location, hole info and club distances. Ask me anything!" }
+    {
+      role: 'assistant',
+      content: `Hey! I'm Eagle, your AI golf coach. Ask me anything — club selection, course strategy, swing tips, mental game, rules questions. I'm here to help you play your best golf.`
+    }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const [transcript, setTranscript] = useState('')
+  const [voiceSupported, setVoiceSupported] = useState(false)
+  const [voiceError, setVoiceError] = useState('')
+  const bottomRef = useRef(null)
+  const recognitionRef = useRef(null)
 
-  const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
-                    selectedCourse?.course?.tees?.female?.[0]?.holes || null
-  const h = realHoles ? realHoles[currentHole] : fallbackHoles[currentHole]
+  const holes = selectedCourse?.course?.tees?.male?.[0]?.holes ||
+                selectedCourse?.course?.tees?.female?.[0]?.holes || []
+  const h = holes[currentHole]
   const courseName = selectedCourse?.course?.club_name || null
-  const holeYards = realHoles ? h?.yardage : h?.yards
-  const holePar = h?.par
-  const holeHcp = h?.handicap || h?.hcp
 
-  async function send(msg) {
-    if (!msg.trim() || loading) return
-    const userMsg = msg.trim()
-    setMessages(prev => [...prev, { role: 'user', text: userMsg }])
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
+
+  // Check voice support
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (SpeechRecognition) {
+      setVoiceSupported(true)
+    }
+  }, [])
+
+  function toggleVoice() {
+    if (isListening) {
+      stopListening()
+    } else {
+      startListening()
+    }
+  }
+
+  function startListening() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      setVoiceError('Voice not supported in this browser. Try Chrome or Safari.')
+      return
+    }
+
+    setVoiceError('')
+    setTranscript('')
+
+    const recognition = new SpeechRecognition()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = 'en-US'
+
+    recognition.onstart = () => setIsListening(true)
+
+    recognition.onresult = (e) => {
+      let interim = ''
+      let final = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          final += e.results[i][0].transcript
+        } else {
+          interim += e.results[i][0].transcript
+        }
+      }
+      setTranscript(final || interim)
+    }
+
+    recognition.onerror = (e) => {
+      setVoiceError('Could not hear you. Please try again.')
+      setIsListening(false)
+    }
+
+    recognition.onend = () => setIsListening(false)
+
+    recognitionRef.current = recognition
+    recognition.start()
+  }
+
+  function stopListening() {
+    recognitionRef.current?.stop()
+    setIsListening(false)
+
+    // Send transcript as message after short delay
+    setTimeout(() => {
+      if (transcript.trim()) {
+        sendMessage(transcript.trim())
+        setTranscript('')
+      }
+    }, 300)
+  }
+
+  async function sendMessage(text) {
+    const userText = text || input.trim()
+    if (!userText) return
+
+    const userMsg = { role: 'user', content: userText }
+    const updatedMessages = [...messages, userMsg]
+    setMessages(updatedMessages)
     setInput('')
     setLoading(true)
 
-    const bag = loadBag()
+    const systemContext = `You are Eagle, an elite AI golf coach and caddie.
+${courseName ? `Player is at ${courseName}.` : ''}
+${h ? `Current hole: Hole ${currentHole + 1}, Par ${h.par}, ${h.yardage || h.yards} yards.` : ''}
+${distanceToPin ? `Distance to pin: ${distanceToPin} yards.` : ''}
 
-    const holeContext = courseName
-      ? `Hole ${currentHole + 1} at ${courseName} — Par ${holePar}, ${holeYards} yards total, Handicap ${holeHcp}.`
-      : `Hole ${currentHole + 1} — Par ${holePar}, ${holeYards} yards total.`
-
-    const distanceContext = distanceToPin
-      ? `GPS confirms player is exactly ${distanceToPin} yards from the pin right now.`
-      : `Player is likely on the tee — full hole is ${holeYards} yards.`
-
-    const bagContext = `Player's exact club distances: ${JSON.stringify(bag)}.`
-
-    const systemPrompt = `You are Eagle, an expert PGA-level golf coach and caddie.
-
-CURRENT SITUATION:
-- ${holeContext}
-- ${distanceContext}
-- ${bagContext}
-
-CRITICAL RULES — NEVER break these:
-1. NEVER ask the player how far they are — you already know from GPS above
-2. NEVER ask for their club distances — you already have them above
-3. NEVER ask clarifying questions — just give direct advice
-4. Always recommend a specific club using their exact yardages
-5. Account for wind and conditions when recommending clubs
-6. Keep answers under 100 words
-7. No markdown formatting, no asterisks, plain text only
-8. If asked "what club should I hit" — answer immediately with a specific club`
+Give direct, specific, actionable golf advice. Be conversational but expert. No markdown, no asterisks, plain text only.`
 
     try {
       const res = await fetch('/api/chat', {
@@ -105,109 +118,201 @@ CRITICAL RULES — NEVER break these:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-5',
-          max_tokens: 200,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userMsg }]
+          max_tokens: 300,
+          system: systemContext,
+          messages: updatedMessages
         })
       })
       const data = await res.json()
       const reply = data.content?.[0]?.text || 'Could not get a response.'
-      setMessages(prev => [...prev, { role: 'ai', text: reply }])
-    } catch(e) {
-      setMessages(prev => [...prev, { role: 'ai', text: 'Connection error — try again.' }])
+      setMessages(prev => [...prev, { role: 'assistant', content: reply }])
+    } catch {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Could not connect. Please try again.'
+      }])
     }
     setLoading(false)
   }
 
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage()
+    }
+  }
+
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column',
+      height: 'calc(100vh - 130px)' }}>
 
-      {/* Course context banner */}
-      {courseName && (
-        <div style={{ background: 'var(--g1)', borderRadius: 10,
-          padding: '8px 14px', marginBottom: 12, display: 'flex',
-          alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 16 }}>⛳</span>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>
-                {courseName}
-              </div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
-                Hole {currentHole + 1} · Par {holePar} · {holeYards} yds
-                {distanceToPin ? ` · 📍 ${distanceToPin} yds to pin` : ''}
-              </div>
-            </div>
+      {/* Context banner */}
+      {(courseName || distanceToPin) && (
+        <div style={{ background: 'var(--g1)', padding: '8px 16px',
+          display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 14 }}>📍</span>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
+            {courseName && `${courseName} · `}
+            {h && `Hole ${currentHole + 1} · Par ${h.par}`}
+            {distanceToPin && ` · ${distanceToPin} yds to pin`}
           </div>
         </div>
       )}
 
-      {/* Distance banner */}
-      {distanceToPin && (
-        <div style={{ background: '#1a3a2a', borderRadius: 10,
-          padding: '8px 14px', marginBottom: 12,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
-              textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-              📍 Your distance to pin
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 700,
-              fontFamily: 'Bebas Neue', color: '#4ade80' }}>
-              {distanceToPin} yards
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ background: '#fff', border: '1px solid var(--bd)',
-        borderRadius: 12, padding: 12, marginBottom: 12,
-        maxHeight: 340, overflowY: 'auto',
-        display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {messages.map((m, i) => (
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16,
+        display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {messages.map((msg, i) => (
           <div key={i} style={{
-            alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-            background: m.role === 'user' ? 'var(--g1)' : 'var(--bg2)',
-            color: m.role === 'user' ? '#fff' : 'var(--tx)',
-            padding: '10px 14px', borderRadius: 12,
-            borderBottomRightRadius: m.role === 'user' ? 4 : 12,
-            borderBottomLeftRadius: m.role === 'ai' ? 4 : 12,
-            fontSize: 13, lineHeight: 1.6, maxWidth: '88%'
-          }}>{m.text}</div>
+            display: 'flex',
+            justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
+          }}>
+            {msg.role === 'assistant' && (
+              <div style={{ width: 28, height: 28, borderRadius: '50%',
+                background: 'var(--g1)', display: 'flex', alignItems: 'center',
+                justifyContent: 'center', fontSize: 14, marginRight: 8,
+                flexShrink: 0, alignSelf: 'flex-end' }}>🎯</div>
+            )}
+            <div style={{
+              maxWidth: '78%',
+              background: msg.role === 'user' ? 'var(--g1)' : '#fff',
+              color: msg.role === 'user' ? '#fff' : 'var(--tx)',
+              border: msg.role === 'assistant' ? '1px solid var(--bd)' : 'none',
+              borderRadius: msg.role === 'user'
+                ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+              padding: '10px 14px',
+              fontSize: 14,
+              lineHeight: 1.6,
+            }}>
+              {msg.content}
+            </div>
+          </div>
         ))}
+
         {loading && (
-          <div style={{ alignSelf: 'flex-start', background: 'var(--bg2)',
-            padding: '10px 14px', borderRadius: 12, fontSize: 13,
-            color: 'var(--tx2)', fontStyle: 'italic' }}>Thinking...</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%',
+              background: 'var(--g1)', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 14 }}>🎯</div>
+            <div style={{ background: '#fff', border: '1px solid var(--bd)',
+              borderRadius: '16px 16px 16px 4px', padding: '10px 14px',
+              fontSize: 14, color: 'var(--tx2)' }}>
+              Eagle is thinking...
+            </div>
+          </div>
         )}
+        <div ref={bottomRef} />
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <input value={input} onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && send(input)}
-          placeholder="Ask your coach..."
-          style={{ flex: 1, border: '1px solid var(--bd)', borderRadius: 8,
-            padding: '10px 12px', fontSize: 14, background: '#fff' }} />
-        <button onClick={() => send(input)}
-          style={{ background: 'var(--g1)', color: '#fff', border: 'none',
-            borderRadius: 8, padding: '10px 16px', fontWeight: 600,
-            cursor: 'pointer', fontSize: 13 }}>Ask ↗</button>
-      </div>
+      {/* Voice transcript preview */}
+      {(isListening || transcript) && (
+        <div style={{ margin: '0 16px 8px', background: 'var(--g1)',
+          borderRadius: 12, padding: '10px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+            marginBottom: transcript ? 6 : 0 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%',
+              background: isListening ? '#ef4444' : '#4ade80',
+              animation: isListening ? 'pulse 1s infinite' : 'none' }} />
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)',
+              textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              {isListening ? 'Listening...' : 'Heard'}
+            </div>
+          </div>
+          {transcript && (
+            <div style={{ fontSize: 13, color: '#fff', lineHeight: 1.5 }}>
+              {transcript}
+            </div>
+          )}
+        </div>
+      )}
 
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
-        textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-        Quick questions
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {quickQuestions.map(q => (
-          <button key={q} onClick={() => send(q)}
-            style={{ border: '1px solid var(--bd)', borderRadius: 8,
-              background: 'var(--bg2)', padding: '9px 12px', textAlign: 'left',
-              fontSize: 12, color: 'var(--tx2)', cursor: 'pointer' }}>
-            {q}
+      {/* Voice error */}
+      {voiceError && (
+        <div style={{ margin: '0 16px 8px', background: '#fee2e2',
+          borderRadius: 10, padding: '8px 12px',
+          fontSize: 12, color: '#991b1b' }}>
+          {voiceError}
+        </div>
+      )}
+
+      {/* Input area */}
+      <div style={{ padding: '8px 16px 16px', borderTop: '1px solid var(--bd)',
+        background: '#fff', flexShrink: 0 }}>
+
+        {/* Quick prompts */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10,
+          overflowX: 'auto', paddingBottom: 4 }}>
+          {[
+            '🏌️ Club advice',
+            '💨 Wind adjustment',
+            '🧠 Mental tip',
+            '📐 Course strategy',
+            '⛳ Rules question',
+          ].map(q => (
+            <button key={q} onClick={() => sendMessage(q)}
+              style={{ background: 'var(--bg2)', border: '1px solid var(--bd)',
+                borderRadius: 20, padding: '4px 12px', cursor: 'pointer',
+                fontSize: 11, color: 'var(--tx)', whiteSpace: 'nowrap',
+                flexShrink: 0 }}>
+              {q}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          {/* Text input */}
+          <textarea value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask Eagle anything..."
+            rows={1}
+            style={{ flex: 1, border: '1px solid var(--bd)', borderRadius: 20,
+              padding: '10px 14px', fontSize: 14, resize: 'none',
+              fontFamily: 'inherit', outline: 'none',
+              background: 'var(--bg2)', color: 'var(--tx)',
+              lineHeight: 1.4, maxHeight: 100, overflowY: 'auto' }} />
+
+          {/* Voice button */}
+          {voiceSupported && (
+            <button onClick={toggleVoice}
+              style={{ width: 44, height: 44, borderRadius: '50%',
+                border: 'none', cursor: 'pointer', flexShrink: 0,
+                background: isListening ? '#ef4444' : 'var(--g1)',
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'center', fontSize: 18,
+                transition: 'all 0.2s',
+                boxShadow: isListening
+                  ? '0 0 0 4px rgba(239,68,68,0.2)' : 'none' }}>
+              {isListening ? '⏹️' : '🎤'}
+            </button>
+          )}
+
+          {/* Send button */}
+          <button onClick={() => sendMessage()}
+            disabled={!input.trim() || loading}
+            style={{ width: 44, height: 44, borderRadius: '50%',
+              border: 'none', cursor: 'pointer', flexShrink: 0,
+              background: input.trim() && !loading ? 'var(--g1)' : 'var(--bg2)',
+              display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 18 }}>
+            ➤
           </button>
-        ))}
+        </div>
+
+        <div style={{ fontSize: 10, color: 'var(--tx2)', textAlign: 'center',
+          marginTop: 8 }}>
+          {voiceSupported
+            ? 'Tap 🎤 to start voice · tap ⏹️ to stop and send'
+            : 'Type your question and press Enter'}
+        </div>
       </div>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+      `}</style>
     </div>
   )
 }
