@@ -1,82 +1,146 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { localCourses } from '../localCourses'
+
+const GOLF_API_KEY = import.meta.env.VITE_GOLF_API_KEY
+const GOLF_API_BASE = 'https://www.golfapi.io/api/v2.3'
 
 export default function CourseSearch({ onCourseSelect }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const debounceRef = useRef(null)
 
   async function searchCourses(val) {
     setQuery(val)
     if (val.length < 3) { setResults([]); return }
-    setLoading(true)
-    setError('')
 
-    // 1. Search local Colorado courses first
-    const q = val.toLowerCase()
-    const localResults = localCourses.filter(c =>
-      c.club_name.toLowerCase().includes(q) ||
-      c.location.city.toLowerCase().includes(q)
-    ).map(c => ({
-      id: c.id,
-      club_name: c.club_name,
-      location: c.location,
-      isLocal: true,
-      fullData: c
-    }))
+    // 500ms debounce to save API calls
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true)
+      setError('')
 
-    // 2. Search API for everything else
-    try {
-      const res = await fetch(
-        `https://api.golfcourseapi.com/v1/search?search_query=${encodeURIComponent(val)}`,
-        { headers: { 'Authorization': `Key ${import.meta.env.VITE_GOLF_API_KEY}` } }
-      )
-      const data = await res.json()
-      const apiResults = (data.courses || []).map(c => ({
-        ...c,
-        isLocal: false
+      // 1. Search local Colorado courses first
+      const q = val.toLowerCase()
+      const localResults = localCourses.filter(c =>
+        c.club_name.toLowerCase().includes(q) ||
+        c.location.city.toLowerCase().includes(q)
+      ).map(c => ({
+        id: c.id,
+        club_name: c.club_name,
+        location: c.location,
+        isLocal: true,
+        fullData: c
       }))
 
-      // Merge — local results first, then API
-      const combined = [
-        ...localResults,
-        ...apiResults.filter(a => !localResults.find(l =>
-          l.club_name.toLowerCase() === a.club_name.toLowerCase()
-        ))
-      ]
-      setResults(combined)
-    } catch {
-      setResults(localResults)
-    }
-    setLoading(false)
+      // 2. Search GolfAPI.io
+      try {
+        const res = await fetch(
+          `${GOLF_API_BASE}/clubs?name=${encodeURIComponent(val)}&country=usa`,
+          {
+            headers: {
+              'Authorization': `Bearer ${GOLF_API_KEY}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        )
+        const data = await res.json()
+        const apiResults = (data.clubs || []).map(c => ({
+          id: c.id,
+          club_name: c.name || c.club_name,
+          location: {
+            city: c.city,
+            state: c.state,
+            country: c.country,
+            latitude: c.lat,
+            longitude: c.lng,
+          },
+          isLocal: false,
+          golfApiId: c.id,
+        }))
+
+        const combined = [
+          ...localResults,
+          ...apiResults.filter(a => !localResults.find(l =>
+            l.club_name.toLowerCase() === a.club_name.toLowerCase()
+          ))
+        ]
+        setResults(combined)
+      } catch {
+        setResults(localResults)
+        if (localResults.length === 0) {
+          setError('Could not search courses — check your connection')
+        }
+      }
+      setLoading(false)
+    }, 500)
   }
 
   async function selectCourse(course) {
+    // Local course — use local data
     if (course.isLocal) {
       onCourseSelect(course.fullData)
       return
     }
-    try {
-      const cached = localStorage.getItem(`course_${course.id}`)
-      if (cached) { onCourseSelect(JSON.parse(cached)); return }
 
-      const res = await fetch(
-        `https://api.golfcourseapi.com/v1/courses/${course.id}`,
-        { headers: { 'Authorization': `Key ${import.meta.env.VITE_GOLF_API_KEY}` } }
-      )
-      const data = await res.json()
-      localStorage.setItem(`course_${course.id}`, JSON.stringify(data))
-      onCourseSelect(data)
+    setLoading(true)
+    setError('')
+
+    try {
+      // Check cache first
+      const cacheKey = `golfapi_course_${course.id}`
+      const cached = localStorage.getItem(cacheKey)
+      if (cached) {
+        onCourseSelect(JSON.parse(cached))
+        setLoading(false)
+        return
+      }
+
+      // Fetch full course data from GolfAPI.io
+      const [courseRes, coordRes] = await Promise.all([
+        fetch(`${GOLF_API_BASE}/courses/${course.id}`, {
+          headers: { 'Authorization': `Bearer ${GOLF_API_KEY}` }
+        }),
+        fetch(`${GOLF_API_BASE}/coordinates/${course.id}`, {
+          headers: { 'Authorization': `Bearer ${GOLF_API_KEY}` }
+        })
+      ])
+
+      const courseData = await courseRes.json()
+      const coordData = await coordRes.json()
+
+      // Build course object compatible with rest of app
+      const builtCourse = {
+        course: {
+          club_name: course.club_name,
+          location: {
+            city: course.location?.city,
+            state: course.location?.state,
+            latitude: course.location?.latitude,
+            longitude: course.location?.longitude,
+          },
+          tees: courseData.tees || {},
+          coordinates: coordData.coordinates || [],
+        }
+      }
+
+      // Cache it
+      localStorage.setItem(cacheKey, JSON.stringify(builtCourse))
+      onCourseSelect(builtCourse)
     } catch(e) {
       setError('Could not load course data — try again')
     }
+    setLoading(false)
   }
 
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ fontFamily: 'Bebas Neue', fontSize: 22, marginBottom: 12 }}>
+      <div style={{ fontFamily: 'Bebas Neue', fontSize: 22, marginBottom: 4 }}>
         Find your course
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 12 }}>
+        Powered by GolfAPI.io · 42,000+ courses
       </div>
 
       <div style={{ position: 'relative', marginBottom: 12 }}>
@@ -88,7 +152,8 @@ export default function CourseSearch({ onCourseSelect }) {
           placeholder="Search any golf course..."
           style={{ width: '100%', border: '1px solid var(--bd)',
             borderRadius: 10, padding: '12px 12px 12px 40px',
-            fontSize: 14, background: '#fff', color: 'var(--tx)' }}
+            fontSize: 14, background: '#fff', color: 'var(--tx)',
+            boxSizing: 'border-box' }}
         />
         {loading && (
           <div style={{ position: 'absolute', right: 12, top: '50%',
