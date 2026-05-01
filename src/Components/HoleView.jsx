@@ -73,10 +73,7 @@ function getHoleCoordinates(coordinates, holeNumber, selectedTee = 2) {
 
 export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   playerPos, pinPos, setPinPos, distanceToPin, showSearch, setShowSearch,
-  shotHistory = [], addShot, playerElevation: _playerElevation, pinElevation }) {
-
-  // TEMP: fake player elevation to test adjustment — remove after testing
-  const playerElevation = _playerElevation ?? 1580
+  shotHistory = [], addShot, playerElevation, pinElevation }) {
 
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
