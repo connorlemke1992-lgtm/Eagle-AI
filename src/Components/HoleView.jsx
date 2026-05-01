@@ -35,12 +35,13 @@ function bestClub(yards, bag) {
   )
 }
 
-// Based on actual GolfAPI poi data observed:
+// GolfAPI poi mapping confirmed from real data:
 // poi 12 = tee box (sideFW: 1=back, 2=middle, 3=forward)
 // poi 1  = green center
 // poi 11 = front of green
 // poi 3  = back of green
 // poi 9  = hazard
+// poi 2  = fairway point
 function getHoleCoordinates(coordinates, holeNumber, selectedTee = 2) {
   if (!coordinates || !coordinates.length) return null
   const holeCoords = coordinates.filter(c => c.hole === holeNumber)
@@ -154,7 +155,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     }
   }, [shotHistory, currentHole])
 
-  // Green coords — for pin placement
   function getGreenCoords(holeIndex) {
     const realCoords = getHoleCoordinates(coordinates, holeIndex + 1, selectedTee)
     if (realCoords?.greenCenter) {
@@ -174,7 +174,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     return { lat: 36.5686, lng: -121.9505 }
   }
 
-  // Tee coords — for T marker
   function getTeeCoords(holeIndex) {
     const realCoords = getHoleCoordinates(coordinates, holeIndex + 1, selectedTee)
     if (realCoords?.tee) {
@@ -185,11 +184,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     }
     const green = getGreenCoords(holeIndex)
     return { lat: green.lat + 0.0003, lng: green.lng + 0.0003 }
-  }
-
-  // Map centers on tee box
-  function getHoleCenterCoords(holeIndex) {
-    return getTeeCoords(holeIndex)
   }
 
   function getPinOffset(position, holeIndex) {
@@ -415,7 +409,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
     const teeCoords = getTeeCoords(currentHole)
     const greenCoords = getGreenCoords(currentHole)
 
-    // Tee box marker — white dot with T
+    // Tee box — white dot with T label
     teeMarkerRef.current = new window.google.maps.Marker({
       position: teeCoords, map,
       icon: {
@@ -427,7 +421,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
       label: { text: 'T', color: '#333', fontSize: '10px', fontWeight: 'bold' }
     })
 
-    // Pin marker — green dot on green
+    // Pin — green dot on green center
     pinMarkerRef.current = new window.google.maps.Marker({
       position: greenCoords, map, draggable: true,
       icon: {
@@ -442,7 +436,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
       setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
     })
 
-    // Hazard markers — red dots
+    // Hazards — red dots
     const holeCoords = getHoleCoordinates(coordinates, currentHole + 1, selectedTee)
     if (holeCoords?.hazards?.length) {
       holeCoords.hazards.forEach(hazard => {
