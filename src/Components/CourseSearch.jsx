@@ -7,6 +7,25 @@ const TEE_OPTIONS = [
   { label: 'Forward', desc: 'Senior / Ladies', icon: '🟡', sideFW: 3 },
 ]
 
+async function fetchScorecardData(courseName) {
+  try {
+    const searchRes = await fetch(
+      `/api/golfcourseapi?endpoint=${encodeURIComponent(`search?search_query=${courseName}`)}`
+    )
+    const searchData = await searchRes.json()
+    const course = searchData.courses?.[0]
+    if (!course?.id) return null
+
+    const courseRes = await fetch(
+      `/api/golfcourseapi?endpoint=${encodeURIComponent(`courses/${course.id}`)}`
+    )
+    const courseData = await courseRes.json()
+    return courseData.course
+  } catch {
+    return null
+  }
+}
+
 export default function CourseSearch({ onCourseSelect }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -116,6 +135,9 @@ export default function CourseSearch({ onCourseSelect }) {
       const courseData = await courseRes.json()
       const coordData = await coordRes.json()
 
+      // Also fetch scorecard from GolfCourseAPI for par/hcp
+      const scorecard = await fetchScorecardData(course.club_name)
+
       const tees = courseData.course?.tees || courseData.tees || []
       const coordinates = coordData.course?.coordinates || coordData.coordinates || []
       const lat = course.location?.latitude || clubData.club?.lat
@@ -133,6 +155,7 @@ export default function CourseSearch({ onCourseSelect }) {
           tees,
           coordinates,
           isGolfAPI: true,
+          scorecard, // store full scorecard for par/hcp lookup
         }
       }
 
@@ -161,7 +184,27 @@ export default function CourseSearch({ onCourseSelect }) {
       const builtData = pendingCourse.builtData
       const tees = builtData.course.tees || []
       const chosenTee = tees[selectedTeeIndex] || tees[0]
+      const scorecard = builtData.course.scorecard
 
+      // Pick matching tee from GolfCourseAPI scorecard
+      // Try to match by tee name, fallback to male[0]
+      const teeName = chosenTee?.teeName?.toLowerCase() || ''
+      const scorecardTees = scorecard?.tees
+      let scorecardHoles = null
+
+      if (scorecardTees) {
+        const allTees = [
+          ...(scorecardTees.male || []),
+          ...(scorecardTees.female || []),
+        ]
+        const matched = allTees.find(t =>
+          t.tee_name?.toLowerCase().includes(teeName) ||
+          teeName.includes(t.tee_name?.toLowerCase())
+        ) || scorecardTees.male?.[0] || allTees[0]
+        scorecardHoles = matched?.holes || null
+      }
+
+      // Build holes array merging yardage from GolfAPI + par/hcp from GolfCourseAPI
       const holes = Array.from({ length: 18 }, (_, i) => {
         const n = i + 1
         const yardage =
@@ -169,21 +212,9 @@ export default function CourseSearch({ onCourseSelect }) {
           chosenTee?.[`Length${n}`] ||
           0
 
-        const par =
-          chosenTee?.[`par${n}`] ||
-          chosenTee?.[`Par${n}`] ||
-          chosenTee?.[`parMen${n}`] ||
-          chosenTee?.[`parLadies${n}`] ||
-          null
-
-        const handicap =
-          chosenTee?.[`hcp${n}`] ||
-          chosenTee?.[`Hcp${n}`] ||
-          chosenTee?.[`handicap${n}`] ||
-          chosenTee?.[`Handicap${n}`] ||
-          chosenTee?.[`handicapMen${n}`] ||
-          chosenTee?.[`strokeIndex${n}`] ||
-          null
+        const scorecardHole = scorecardHoles?.[i]
+        const par = scorecardHole?.par || null
+        const handicap = scorecardHole?.handicap || null
 
         return { hole: n, yardage, par, handicap }
       })
@@ -234,13 +265,8 @@ export default function CourseSearch({ onCourseSelect }) {
             marginBottom: 24 }}>
             {tees.map((tee, i) => {
               const totalYards = Array.from({ length: 18 }, (_, j) =>
-                tee[`length${j + 1}`] || 0
+                tee[`length${j + 1}`] || tee[`Length${j + 1}`] || 0
               ).reduce((a, b) => a + b, 0)
-
-              const totalPar = Array.from({ length: 18 }, (_, j) => {
-                const n = j + 1
-                return tee[`par${n}`] || tee[`Par${n}`] || tee[`parMen${n}`] || 0
-              }).reduce((a, b) => a + b, 0)
 
               return (
                 <button key={tee.teeID || i}
@@ -265,7 +291,6 @@ export default function CourseSearch({ onCourseSelect }) {
                       color: selectedTeeIndex === i
                         ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>
                       {totalYards > 0 ? `${totalYards.toLocaleString()} yards` : ''}
-                      {totalPar > 0 ? ` · Par ${totalPar}` : ''}
                       {tee.courseRatingMen ? ` · Rating ${tee.courseRatingMen}` : ''}
                       {tee.slopeMen ? ` · Slope ${tee.slopeMen}` : ''}
                     </div>
