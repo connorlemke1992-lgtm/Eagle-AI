@@ -196,6 +196,7 @@ export default function MyBag({ onBack }) {
               value={newClubName}
               onChange={e => setNewClubName(e.target.value)}
               placeholder="Club name e.g. 60 Degree"
+              onKeyDown={e => e.key === 'Enter' && addClub()}
               style={{ flex: 1, border: '1px solid var(--bd)', borderRadius: 8,
                 padding: '8px 10px', fontSize: 13, color: 'var(--tx)' }}
             />
@@ -204,6 +205,7 @@ export default function MyBag({ onBack }) {
               value={newClubYards}
               onChange={e => setNewClubYards(e.target.value)}
               placeholder="Yds"
+              onKeyDown={e => e.key === 'Enter' && addClub()}
               style={{ width: 70, border: '1px solid var(--bd)', borderRadius: 8,
                 padding: '8px 10px', fontSize: 13, textAlign: 'center',
                 color: 'var(--tx)' }}
