@@ -66,7 +66,7 @@ export default function MyBag({ onBack }) {
   }
 
   function addClub() {
-    if (!newClubName.trim() || !newClubYards) return
+    if (!newClubName.trim()) return
     const newClub = {
       name: newClubName.trim(),
       yards: parseInt(newClubYards) || 0
@@ -174,7 +174,7 @@ export default function MyBag({ onBack }) {
         ))}
       </div>
 
-      {/* Add Club button */}
+      {/* Add Club */}
       {!showAddClub ? (
         <button onClick={() => setShowAddClub(true)}
           style={{ width: '100%', background: '#fff',
@@ -195,7 +195,7 @@ export default function MyBag({ onBack }) {
               autoFocus
               value={newClubName}
               onChange={e => setNewClubName(e.target.value)}
-              placeholder="Club name e.g. 60 Degree"
+              placeholder="Club name"
               onKeyDown={e => e.key === 'Enter' && addClub()}
               style={{ flex: 1, border: '1px solid var(--bd)', borderRadius: 8,
                 padding: '8px 10px', fontSize: 13, color: 'var(--tx)' }}
@@ -206,18 +206,18 @@ export default function MyBag({ onBack }) {
               onChange={e => setNewClubYards(e.target.value)}
               placeholder="Yds"
               onKeyDown={e => e.key === 'Enter' && addClub()}
-              style={{ width: 70, border: '1px solid var(--bd)', borderRadius: 8,
+              style={{ width: 90, border: '1px solid var(--bd)', borderRadius: 8,
                 padding: '8px 10px', fontSize: 13, textAlign: 'center',
                 color: 'var(--tx)' }}
             />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={addClub}
-              disabled={!newClubName.trim() || !newClubYards}
+              disabled={!newClubName.trim()}
               style={{ flex: 1, background: 'var(--g1)', color: '#fff',
                 border: 'none', borderRadius: 8, padding: '10px',
                 cursor: 'pointer', fontWeight: 600, fontSize: 13,
-                opacity: !newClubName.trim() || !newClubYards ? 0.5 : 1 }}>
+                opacity: !newClubName.trim() ? 0.5 : 1 }}>
               ➕ Add
             </button>
             <button onClick={() => {
