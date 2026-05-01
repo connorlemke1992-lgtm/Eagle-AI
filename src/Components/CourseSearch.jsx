@@ -1,9 +1,6 @@
 import { useState, useRef } from 'react'
 import { localCourses } from '../localCourses'
 
-const GOLF_API_KEY = import.meta.env.VITE_GOLF_API_KEY
-const GOLF_API_BASE = 'https://www.golfapi.io/api/v2.3'
-
 export default function CourseSearch({ onCourseSelect }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -15,7 +12,6 @@ export default function CourseSearch({ onCourseSelect }) {
     setQuery(val)
     if (val.length < 3) { setResults([]); return }
 
-    // 500ms debounce to save API calls
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
       setLoading(true)
@@ -34,16 +30,10 @@ export default function CourseSearch({ onCourseSelect }) {
         fullData: c
       }))
 
-      // 2. Search GolfAPI.io
+      // 2. Search GolfAPI.io via serverless function
       try {
         const res = await fetch(
-          `${GOLF_API_BASE}/clubs?name=${encodeURIComponent(val)}&country=usa`,
-          {
-            headers: {
-              'Authorization': `Bearer ${GOLF_API_KEY}`,
-              'Content-Type': 'application/json'
-            }
-          }
+          `/api/golfapi?endpoint=clubs%3Fname%3D${encodeURIComponent(val)}%26country%3Dusa`
         )
         const data = await res.json()
         const apiResults = (data.clubs || []).map(c => ({
@@ -78,7 +68,6 @@ export default function CourseSearch({ onCourseSelect }) {
   }
 
   async function selectCourse(course) {
-    // Local course — use local data
     if (course.isLocal) {
       onCourseSelect(course.fullData)
       return
@@ -88,7 +77,6 @@ export default function CourseSearch({ onCourseSelect }) {
     setError('')
 
     try {
-      // Check cache first
       const cacheKey = `golfapi_course_${course.id}`
       const cached = localStorage.getItem(cacheKey)
       if (cached) {
@@ -97,20 +85,14 @@ export default function CourseSearch({ onCourseSelect }) {
         return
       }
 
-      // Fetch full course data from GolfAPI.io
       const [courseRes, coordRes] = await Promise.all([
-        fetch(`${GOLF_API_BASE}/courses/${course.id}`, {
-          headers: { 'Authorization': `Bearer ${GOLF_API_KEY}` }
-        }),
-        fetch(`${GOLF_API_BASE}/coordinates/${course.id}`, {
-          headers: { 'Authorization': `Bearer ${GOLF_API_KEY}` }
-        })
+        fetch(`/api/golfapi?endpoint=courses%2F${course.id}`),
+        fetch(`/api/golfapi?endpoint=coordinates%2F${course.id}`)
       ])
 
       const courseData = await courseRes.json()
       const coordData = await coordRes.json()
 
-      // Build course object compatible with rest of app
       const builtCourse = {
         course: {
           club_name: course.club_name,
@@ -125,7 +107,6 @@ export default function CourseSearch({ onCourseSelect }) {
         }
       }
 
-      // Cache it
       localStorage.setItem(cacheKey, JSON.stringify(builtCourse))
       onCourseSelect(builtCourse)
     } catch(e) {
