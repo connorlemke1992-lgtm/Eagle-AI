@@ -35,6 +35,23 @@ function bestClub(yards, bag) {
   )
 }
 
+// Extract coordinates for a specific hole from GolfAPI coordinate array
+function getHoleCoordinates(coordinates, holeNumber) {
+  if (!coordinates || !coordinates.length) return null
+  const holeCoords = coordinates.filter(c => c.hole === holeNumber)
+  if (!holeCoords.length) return null
+
+  // poi types: 1=tee, 11=front green, 12=center green, 3=back green, 9=hazard
+  const tee = holeCoords.find(c => c.poi === 1 && c.sideFW === 2) ||
+              holeCoords.find(c => c.poi === 1)
+  const greenCenter = holeCoords.find(c => c.poi === 12) ||
+                      holeCoords.find(c => c.poi === 11) ||
+                      holeCoords.find(c => c.poi === 3)
+  const hazards = holeCoords.filter(c => c.poi === 9)
+
+  return { tee, greenCenter, hazards, all: holeCoords }
+}
+
 export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   playerPos, pinPos, setPinPos, distanceToPin, showSearch, setShowSearch,
   shotHistory = [], addShot }) {
@@ -44,6 +61,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const pinMarkerRef = useRef(null)
   const teeMarkerRef = useRef(null)
   const playerMarkerRef = useRef(null)
+  const hazardMarkersRef = useRef([])
   const measureMarkersRef = useRef([])
   const measureLineRef = useRef(null)
   const shotLinesRef = useRef([])
@@ -79,7 +97,11 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const holes = courseData?.course?.tees?.male?.[0]?.holes ||
                 courseData?.course?.tees?.female?.[0]?.holes || []
   const h = holes[currentHole]
+  const coordinates = courseData?.course?.coordinates || []
   const holeShots = shotHistory.filter(s => s.hole === currentHole + 1)
+
+  // Get real coordinates for current hole
+  const holeCoords = getHoleCoordinates(coordinates, currentHole + 1)
 
   useEffect(() => {
     if (!courseData) return
@@ -123,7 +145,22 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     }
   }, [shotHistory, currentHole])
 
-  function getHoleCoords(holeIndex) {
+  function getHoleCenterCoords(holeIndex) {
+    // Use real coordinates if available
+    const realCoords = getHoleCoordinates(coordinates, holeIndex + 1)
+    if (realCoords?.greenCenter) {
+      return {
+        lat: parseFloat(realCoords.greenCenter.latitude),
+        lng: parseFloat(realCoords.greenCenter.longitude)
+      }
+    }
+    if (realCoords?.tee) {
+      return {
+        lat: parseFloat(realCoords.tee.latitude),
+        lng: parseFloat(realCoords.tee.longitude)
+      }
+    }
+    // Fallback to math estimate
     const lat = courseData?.course?.location?.latitude
     const lng = courseData?.course?.location?.longitude
     if (lat && lng) {
@@ -135,13 +172,48 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     return { lat: 36.5686, lng: -121.9505 }
   }
 
+  function getTeeCoords(holeIndex) {
+    const realCoords = getHoleCoordinates(coordinates, holeIndex + 1)
+    if (realCoords?.tee) {
+      return {
+        lat: parseFloat(realCoords.tee.latitude),
+        lng: parseFloat(realCoords.tee.longitude)
+      }
+    }
+    const center = getHoleCenterCoords(holeIndex)
+    return { lat: center.lat + 0.0003, lng: center.lng + 0.0003 }
+  }
+
   function getPinOffset(position, holeIndex) {
-    const coords = getHoleCoords(holeIndex)
-    return {
+    const realCoords = getHoleCoordinates(coordinates, holeIndex + 1)
+    if (realCoords) {
+      const front = realCoords.all?.find(c => c.poi === 11)
+      const center = realCoords.all?.find(c => c.poi === 12)
+      const back = realCoords.all?.find(c => c.poi === 3)
+      if (position === 'front' && front) {
+        return { lat: parseFloat(front.latitude), lng: parseFloat(front.longitude) }
+      }
+      if (position === 'middle' && center) {
+        return { lat: parseFloat(center.latitude), lng: parseFloat(center.longitude) }
+      }
+      if (position === 'back' && back) {
+        return { lat: parseFloat(back.latitude), lng: parseFloat(back.longitude) }
+      }
+      if (realCoords.greenCenter) {
+        return {
+          lat: parseFloat(realCoords.greenCenter.latitude),
+          lng: parseFloat(realCoords.greenCenter.longitude)
+        }
+      }
+    }
+    // Fallback
+    const coords = getHoleCenterCoords(holeIndex)
+    const offsets = {
       front: { lat: coords.lat - 0.0001, lng: coords.lng },
       middle: { lat: coords.lat, lng: coords.lng },
       back: { lat: coords.lat + 0.0001, lng: coords.lng },
-    }[position] || coords
+    }
+    return offsets[position] || coords
   }
 
   function selectPinPosition(position) {
@@ -316,7 +388,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
 
   function initMap() {
     if (!mapRef.current) return
-    const coords = getHoleCoords(currentHole)
+    const coords = getHoleCenterCoords(currentHole)
     const map = new window.google.maps.Map(mapRef.current, {
       center: coords, zoom: 17, mapTypeId: 'satellite', tilt: 0,
       zoomControl: true, mapTypeControl: false,
@@ -343,9 +415,15 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
   function placeHoleMarkers(map) {
     if (pinMarkerRef.current) pinMarkerRef.current.setMap(null)
     if (teeMarkerRef.current) teeMarkerRef.current.setMap(null)
-    const coords = getHoleCoords(currentHole)
+    hazardMarkersRef.current.forEach(m => m.setMap(null))
+    hazardMarkersRef.current = []
+
+    const greenCoords = getHoleCenterCoords(currentHole)
+    const teeCoords = getTeeCoords(currentHole)
+
+    // Tee box marker
     teeMarkerRef.current = new window.google.maps.Marker({
-      position: { lat: coords.lat + 0.0003, lng: coords.lng + 0.0003 }, map,
+      position: teeCoords, map,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
         scale: 10, fillColor: '#ffffff', fillOpacity: 1,
@@ -354,8 +432,10 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
       title: 'Tee Box',
       label: { text: 'T', color: '#333', fontSize: '10px', fontWeight: 'bold' }
     })
+
+    // Pin marker
     pinMarkerRef.current = new window.google.maps.Marker({
-      position: coords, map, draggable: true,
+      position: greenCoords, map, draggable: true,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
         scale: 10, fillColor: '#4ade80', fillOpacity: 1,
@@ -363,10 +443,32 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
       },
       title: 'Pin — drag to move flag'
     })
-    setPinPos({ lat: coords.lat, lng: coords.lng })
+    setPinPos({ lat: greenCoords.lat, lng: greenCoords.lng })
     pinMarkerRef.current.addListener('dragend', (e) => {
       setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
     })
+
+    // Hazard markers (poi: 9)
+    const holeCoords = getHoleCoordinates(coordinates, currentHole + 1)
+    if (holeCoords?.hazards) {
+      holeCoords.hazards.forEach(hazard => {
+        const marker = new window.google.maps.Marker({
+          position: {
+            lat: parseFloat(hazard.latitude),
+            lng: parseFloat(hazard.longitude)
+          },
+          map,
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 6, fillColor: '#f59e0b', fillOpacity: 0.8,
+            strokeColor: '#fff', strokeWeight: 1,
+          },
+          title: 'Hazard'
+        })
+        hazardMarkersRef.current.push(marker)
+      })
+    }
+
     setTimeout(() => startPinPulse(), 500)
   }
 
@@ -432,7 +534,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
   }
 
   function moveToHole() {
-    const coords = getHoleCoords(currentHole)
+    const coords = getHoleCenterCoords(currentHole)
     mapInstanceRef.current.panTo(coords)
     mapInstanceRef.current.setZoom(17)
     placeHoleMarkers(mapInstanceRef.current)
@@ -471,7 +573,9 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
             📍 Where is the pin on Hole {currentHole + 1}?
           </div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 14 }}>
-            Select a position or drag the 🟢 pin on the map for exact placement
+            {coordinates.length > 0
+              ? 'Select a position — Eagle will place the pin on the actual green'
+              : 'Select a position or drag the 🟢 pin on the map for exact placement'}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
             gap: 8, marginBottom: 10 }}>
@@ -645,7 +749,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
               {showShotHistory ? '▲' : '▼'}
             </span>
           </button>
-
           {showShotHistory && (
             <div style={{ background: '#fff', border: '1px solid var(--bd)',
               borderRadius: 10, marginTop: 6, overflow: 'hidden' }}>
@@ -690,6 +793,11 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
           </div>
           <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
             📍 {courseData?.course?.location?.city}, {courseData?.course?.location?.state}
+            {coordinates.length > 0 && (
+              <span style={{ marginLeft: 6, color: 'var(--g2)', fontWeight: 600 }}>
+                · Real GPS ✅
+              </span>
+            )}
           </div>
         </div>
         <button onClick={() => { onCourseSelect(null); setCourseData(null); mapInstanceRef.current = null }}
@@ -747,20 +855,21 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontFamily: 'Bebas Neue', fontSize: 20 }}>Hole {currentHole + 1}</div>
           <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
-            Par {h?.par} · {h?.yardage} yds · Hcp {h?.handicap}
+            Par {h?.par || '—'} · {h?.yardage || h?.yards || '—'} yds · Hcp {h?.handicap || h?.hcp || '—'}
           </div>
         </div>
-        <button onClick={() => setCurrentHole(Math.min(holes.length - 1, currentHole + 1))}
-          disabled={currentHole >= holes.length - 1}
+        <button onClick={() => setCurrentHole(Math.min((holes.length || 18) - 1, currentHole + 1))}
+          disabled={currentHole >= (holes.length || 18) - 1}
           style={{ border: '1px solid var(--bd)', borderRadius: 8,
             background: '#fff', padding: '6px 14px', cursor: 'pointer',
-            opacity: currentHole >= holes.length - 1 ? 0.3 : 1 }}>Next →</button>
+            opacity: currentHole >= (holes.length || 18) - 1 ? 0.3 : 1 }}>Next →</button>
       </div>
 
       <div style={{ background: 'var(--bg2)', borderRadius: 8,
         padding: '8px 12px', fontSize: 12, color: 'var(--tx2)',
         marginBottom: 10, textAlign: 'center' }}>
         👆 Tap 1 = start · Tap 2 = target · Drag 🟢 pin · 🔵 = you · 🟡 = shots
+        {coordinates.length > 0 && ' · 🟠 = hazards'}
       </div>
 
       <div ref={mapRef}
@@ -795,6 +904,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
           { color: '#f59e0b', label: 'Shot line' },
           { color: '#ffcc00', label: 'Measure start' },
           { color: '#ef4444', label: 'Measure end' },
+          ...(coordinates.length > 0 ? [{ color: '#f59e0b', label: 'Hazards' }] : []),
         ].map(l => (
           <div key={l.label} style={{ display: 'flex', alignItems: 'center',
             gap: 6, fontSize: 11, color: 'var(--tx2)' }}>
