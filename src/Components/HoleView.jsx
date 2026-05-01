@@ -35,28 +35,26 @@ function bestClub(yards, bag) {
   )
 }
 
-// GolfAPI poi types:
-// poi 1 = tee box (sideFW 1=back, 2=middle, 3=forward)
-// poi 3 = back of green
-// poi 9 = hazard
+// Based on actual GolfAPI poi data observed:
+// poi 12 = tee box (sideFW: 1=back, 2=middle, 3=forward)
+// poi 1  = green center
 // poi 11 = front of green
-// poi 12 = center of green
+// poi 3  = back of green
+// poi 9  = hazard
 function getHoleCoordinates(coordinates, holeNumber, selectedTee = 2) {
   if (!coordinates || !coordinates.length) return null
   const holeCoords = coordinates.filter(c => c.hole === holeNumber)
   if (!holeCoords.length) return null
 
-  // Tee box — use selected tee (sideFW), fallback to any tee
-  const tee = holeCoords.find(c => c.poi === 1 && c.sideFW === selectedTee) ||
-              holeCoords.find(c => c.poi === 1 && c.sideFW === 2) ||
-              holeCoords.find(c => c.poi === 1)
+  const tee = holeCoords.find(c => c.poi === 12 && c.sideFW === selectedTee) ||
+              holeCoords.find(c => c.poi === 12 && c.sideFW === 2) ||
+              holeCoords.find(c => c.poi === 12)
 
-  // Green center
-  const greenCenter = holeCoords.find(c => c.poi === 12) ||
+  const greenCenter = holeCoords.find(c => c.poi === 1 && c.sideFW === 2) ||
+                      holeCoords.find(c => c.poi === 1) ||
                       holeCoords.find(c => c.poi === 11) ||
                       holeCoords.find(c => c.poi === 3)
 
-  // Hazards
   const hazards = holeCoords.filter(c => c.poi === 9)
 
   return { tee, greenCenter, hazards, all: holeCoords }
@@ -156,7 +154,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     }
   }, [shotHistory, currentHole])
 
-  // Green center coords — used for pin placement
+  // Green coords — for pin placement
   function getGreenCoords(holeIndex) {
     const realCoords = getHoleCoordinates(coordinates, holeIndex + 1, selectedTee)
     if (realCoords?.greenCenter) {
@@ -165,7 +163,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
         lng: parseFloat(realCoords.greenCenter.longitude)
       }
     }
-    // Fallback
     const lat = courseData?.course?.location?.latitude
     const lng = courseData?.course?.location?.longitude
     if (lat && lng) {
@@ -177,7 +174,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     return { lat: 36.5686, lng: -121.9505 }
   }
 
-  // Tee box coords — used for T marker and map centering
+  // Tee coords — for T marker
   function getTeeCoords(holeIndex) {
     const realCoords = getHoleCoordinates(coordinates, holeIndex + 1, selectedTee)
     if (realCoords?.tee) {
@@ -186,26 +183,20 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
         lng: parseFloat(realCoords.tee.longitude)
       }
     }
-    // Fallback — offset from green
     const green = getGreenCoords(holeIndex)
     return { lat: green.lat + 0.0003, lng: green.lng + 0.0003 }
   }
 
-  // Map centers between tee and green
+  // Map centers on tee box
   function getHoleCenterCoords(holeIndex) {
-    const tee = getTeeCoords(holeIndex)
-    const green = getGreenCoords(holeIndex)
-    return {
-      lat: (tee.lat + green.lat) / 2,
-      lng: (tee.lng + green.lng) / 2,
-    }
+    return getTeeCoords(holeIndex)
   }
 
   function getPinOffset(position, holeIndex) {
     const realCoords = getHoleCoordinates(coordinates, holeIndex + 1, selectedTee)
     if (realCoords?.all) {
       const front = realCoords.all.find(c => c.poi === 11)
-      const center = realCoords.all.find(c => c.poi === 12)
+      const center = realCoords.all.find(c => c.poi === 1)
       const back = realCoords.all.find(c => c.poi === 3)
       if (position === 'front' && front)
         return { lat: parseFloat(front.latitude), lng: parseFloat(front.longitude) }
@@ -214,7 +205,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
       if (position === 'back' && back)
         return { lat: parseFloat(back.latitude), lng: parseFloat(back.longitude) }
     }
-    // Fallback offsets
     const green = getGreenCoords(holeIndex)
     const offsets = {
       front: { lat: green.lat - 0.0001, lng: green.lng },
@@ -417,7 +407,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
   }
 
   function placeHoleMarkers(map) {
-    // Clear existing markers
     if (pinMarkerRef.current) pinMarkerRef.current.setMap(null)
     if (teeMarkerRef.current) teeMarkerRef.current.setMap(null)
     hazardMarkersRef.current.forEach(m => m.setMap(null))
@@ -426,7 +415,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
     const teeCoords = getTeeCoords(currentHole)
     const greenCoords = getGreenCoords(currentHole)
 
-    // Tee box marker — WHITE dot with T label
+    // Tee box marker — white dot with T
     teeMarkerRef.current = new window.google.maps.Marker({
       position: teeCoords, map,
       icon: {
@@ -438,7 +427,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
       label: { text: 'T', color: '#333', fontSize: '10px', fontWeight: 'bold' }
     })
 
-    // Pin marker — GREEN dot on green center
+    // Pin marker — green dot on green
     pinMarkerRef.current = new window.google.maps.Marker({
       position: greenCoords, map, draggable: true,
       icon: {
@@ -453,7 +442,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
       setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
     })
 
-    // Hazard markers — orange dots
+    // Hazard markers — red dots
     const holeCoords = getHoleCoordinates(coordinates, currentHole + 1, selectedTee)
     if (holeCoords?.hazards?.length) {
       holeCoords.hazards.forEach(hazard => {
@@ -527,7 +516,9 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
             <div style="font-size:13px;color:#1a5c33;font-weight:600;margin-top:2px">
               Hit ${club.name} (${club.yards}y club)
             </div>
-            <div style="font-size:11px;color:#888;margin-top:4px">Tap anywhere to measure again</div>
+            <div style="font-size:11px;color:#888;margin-top:4px">
+              Tap anywhere to measure again
+            </div>
           </div>
         `)
         infoWindowRef.current.open(map, endM)
@@ -560,10 +551,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
       <CourseSearch onCourseSelect={(data) => {
         setCourseData(data)
         onCourseSelect(data)
-        // Update selected tee from course data
-        if (data?.selectedTee) {
-          setSelectedTee(data.selectedTee)
-        }
+        if (data?.selectedTee) setSelectedTee(data.selectedTee)
         setVisitedHoles([])
         localStorage.removeItem('visited_holes')
         mapInstanceRef.current = null
@@ -651,7 +639,9 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
                     borderRadius: 8, padding: '8px 4px', cursor: 'pointer',
                     textAlign: 'center', color: '#fff' }}>
                   <div style={{ fontSize: 12, fontWeight: 600 }}>{c.name}</div>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>{c.yards}y</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>
+                    {c.yards}y
+                  </div>
                 </button>
               ))}
             </div>
@@ -800,8 +790,8 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
           <div style={{ fontFamily: 'Bebas Neue', fontSize: 18, color: 'var(--tx)' }}>
             {courseData?.course?.club_name || 'Course loaded'}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--tx2)', display: 'flex',
-            alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 11, color: 'var(--tx2)',
+            display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             📍 {courseData?.course?.location?.city}, {courseData?.course?.location?.state}
             {coordinates.length > 0 && (
               <span style={{ color: 'var(--g2)', fontWeight: 600 }}>· Real GPS ✅</span>
@@ -854,8 +844,12 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 18 }}>🟢</span>
           <div style={{ textAlign: 'left' }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>Move Pin</div>
-            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>Change today's flag position</div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>
+              Move Pin
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
+              Change today's flag position
+            </div>
           </div>
         </div>
         <span style={{ fontSize: 16, color: 'var(--tx2)' }}>→</span>
@@ -874,7 +868,8 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
             Hole {currentHole + 1}
           </div>
           <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
-            Par {h?.par || '—'} · {h?.yardage || h?.yards || '—'} yds · Hcp {h?.handicap || h?.hcp || '—'}
+            Par {h?.par || '—'} · {h?.yardage || h?.yards || '—'} yds ·
+            Hcp {h?.handicap || h?.hcp || '—'}
           </div>
         </div>
         <button onClick={() => setCurrentHole(Math.min((holes.length || 18) - 1, currentHole + 1))}
