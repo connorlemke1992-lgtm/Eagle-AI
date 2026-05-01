@@ -116,7 +116,6 @@ export default function CourseSearch({ onCourseSelect }) {
       const courseData = await courseRes.json()
       const coordData = await coordRes.json()
 
-      // GolfAPI returns tees as array with length1-length18
       const tees = courseData.course?.tees || courseData.tees || []
       const coordinates = coordData.course?.coordinates || coordData.coordinates || []
       const lat = course.location?.latitude || clubData.club?.lat
@@ -163,12 +162,31 @@ export default function CourseSearch({ onCourseSelect }) {
       const tees = builtData.course.tees || []
       const chosenTee = tees[selectedTeeIndex] || tees[0]
 
-      // Build holes array from length1-length18
-      const holes = Array.from({ length: 18 }, (_, i) => ({
-        hole: i + 1,
-        yardage: chosenTee?.[`length${i + 1}`] || 0,
-        par: null, // GolfAPI doesn't include par per hole in tee data
-      }))
+      const holes = Array.from({ length: 18 }, (_, i) => {
+        const n = i + 1
+        const yardage =
+          chosenTee?.[`length${n}`] ||
+          chosenTee?.[`Length${n}`] ||
+          0
+
+        const par =
+          chosenTee?.[`par${n}`] ||
+          chosenTee?.[`Par${n}`] ||
+          chosenTee?.[`parMen${n}`] ||
+          chosenTee?.[`parLadies${n}`] ||
+          null
+
+        const handicap =
+          chosenTee?.[`hcp${n}`] ||
+          chosenTee?.[`Hcp${n}`] ||
+          chosenTee?.[`handicap${n}`] ||
+          chosenTee?.[`Handicap${n}`] ||
+          chosenTee?.[`handicapMen${n}`] ||
+          chosenTee?.[`strokeIndex${n}`] ||
+          null
+
+        return { hole: n, yardage, par, handicap }
+      })
 
       const data = {
         ...builtData,
@@ -178,7 +196,7 @@ export default function CourseSearch({ onCourseSelect }) {
           selectedTeeLabel: chosenTee?.teeName || 'Middle',
           selectedTeeIndex,
           chosenTee,
-          holes, // flat holes array for easy access
+          holes,
           courseRating: chosenTee?.courseRatingMen,
           slope: chosenTee?.slopeMen,
         }
@@ -193,7 +211,6 @@ export default function CourseSearch({ onCourseSelect }) {
     setPendingCourse(null)
   }
 
-  // Tee selector screen
   if (showTeeSelector && pendingCourse) {
     const tees = pendingCourse.builtData?.course?.tees || []
     const isGolfAPI = pendingCourse.builtData?.course?.isGolfAPI
@@ -212,7 +229,6 @@ export default function CourseSearch({ onCourseSelect }) {
           ⛳ {pendingCourse.club_name}
         </div>
 
-        {/* GolfAPI tees — show actual tee names */}
         {isGolfAPI && tees.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10,
             marginBottom: 24 }}>
@@ -220,6 +236,12 @@ export default function CourseSearch({ onCourseSelect }) {
               const totalYards = Array.from({ length: 18 }, (_, j) =>
                 tee[`length${j + 1}`] || 0
               ).reduce((a, b) => a + b, 0)
+
+              const totalPar = Array.from({ length: 18 }, (_, j) => {
+                const n = j + 1
+                return tee[`par${n}`] || tee[`Par${n}`] || tee[`parMen${n}`] || 0
+              }).reduce((a, b) => a + b, 0)
+
               return (
                 <button key={tee.teeID || i}
                   onClick={() => setSelectedTeeIndex(i)}
@@ -242,7 +264,8 @@ export default function CourseSearch({ onCourseSelect }) {
                     <div style={{ fontSize: 12,
                       color: selectedTeeIndex === i
                         ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>
-                      {totalYards > 0 ? `${totalYards.toLocaleString()} total yards` : ''}
+                      {totalYards > 0 ? `${totalYards.toLocaleString()} yards` : ''}
+                      {totalPar > 0 ? ` · Par ${totalPar}` : ''}
                       {tee.courseRatingMen ? ` · Rating ${tee.courseRatingMen}` : ''}
                       {tee.slopeMen ? ` · Slope ${tee.slopeMen}` : ''}
                     </div>
@@ -255,7 +278,6 @@ export default function CourseSearch({ onCourseSelect }) {
             })}
           </div>
         ) : (
-          // Local course — show generic Back/Middle/Forward
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10,
             marginBottom: 24 }}>
             {TEE_OPTIONS.map(tee => (
@@ -301,7 +323,7 @@ export default function CourseSearch({ onCourseSelect }) {
             fontWeight: 700, fontSize: 16, cursor: 'pointer' }}>
           {isGolfAPI && tees[selectedTeeIndex]
             ? `Let's Play ${tees[selectedTeeIndex].teeName} Tees →`
-            : 'Let's Play →'}
+            : 'Let\'s Play →'}
         </button>
       </div>
     )
