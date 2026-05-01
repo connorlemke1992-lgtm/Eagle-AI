@@ -10,6 +10,25 @@ function haversineYards(lat1, lon1, lat2, lon2) {
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1.094)
 }
 
+async function getElevationMeters(lat, lng) {
+  try {
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/elevation/json?locations=${lat},${lng}&key=${import.meta.env.VITE_GOOGLE_MAPS_KEY}`
+    )
+    const data = await res.json()
+    return data.results?.[0]?.elevation || null
+  } catch {
+    return null
+  }
+}
+
+function adjustYardsForElevation(yards, playerElevM, targetElevM) {
+  if (!playerElevM || !targetElevM) return yards
+  const diffFeet = (targetElevM - playerElevM) * 3.281
+  const adjustment = Math.round(diffFeet / 3)
+  return yards + adjustment
+}
+
 function loadBag() {
   try {
     const stored = localStorage.getItem('my_bag')
@@ -56,7 +75,7 @@ function getHoleCoordinates(coordinates, holeNumber, selectedTee = 2) {
 
 export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   playerPos, pinPos, setPinPos, distanceToPin, showSearch, setShowSearch,
-  shotHistory = [], addShot }) {
+  shotHistory = [], addShot, playerElevation, pinElevation }) {
 
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
@@ -75,6 +94,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
 
   const [tapDist, setTapDist] = useState(null)
   const [tapClub, setTapClub] = useState(null)
+  const [tapElevAdj, setTapElevAdj] = useState(null)
   const [courseData, setCourseData] = useState(() => {
     try {
       const stored = localStorage.getItem('selected_course')
@@ -116,6 +136,14 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const teeLabel = courseData?.course?.selectedTeeLabel ||
     courseData?.selectedTeeLabel ||
     (selectedTee === 1 ? 'Back' : selectedTee === 3 ? 'Forward' : 'Middle')
+
+  // Elevation-adjusted distance to pin
+  const adjustedDistToPin = distanceToPin
+    ? adjustYardsForElevation(distanceToPin, playerElevation, pinElevation)
+    : null
+  const elevDiff = (playerElevation && pinElevation)
+    ? Math.round((pinElevation - playerElevation) * 3.281)
+    : null
 
   useEffect(() => {
     if (!courseData) return
@@ -465,8 +493,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
   }
 
   function addMapClickListener(map) {
-    map.addListener('click', (e) => {
-      // Disable map clicks while tracking a shot
+    map.addListener('click', async (e) => {
       if (shotModeRef.current === 'waiting_for_ball') return
 
       if (!measureStartRef.current) {
@@ -491,11 +518,19 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         `)
         infoWindowRef.current.open(map, startM)
       } else {
-        const dist = haversineYards(
+        const rawDist = haversineYards(
           measureStartRef.current.lat(), measureStartRef.current.lng(),
           e.latLng.lat(), e.latLng.lng()
         )
-        const club = bestClub(dist, bag)
+
+        // Fetch elevation for tapped target
+        const targetElev = await getElevationMeters(e.latLng.lat(), e.latLng.lng())
+        const adjDist = adjustYardsForElevation(rawDist, playerElevation, targetElev)
+        const elevAdj = (playerElevation && targetElev)
+          ? Math.round((targetElev - playerElevation) * 3.281)
+          : null
+        const club = bestClub(adjDist, bag)
+
         if (measureLineRef.current) measureLineRef.current.setMap(null)
         measureLineRef.current = new window.google.maps.Polyline({
           path: [measureStartRef.current, e.latLng],
@@ -513,8 +548,11 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         measureMarkersRef.current.push(endM)
         infoWindowRef.current.setContent(`
           <div style="font-family:Inter,sans-serif;padding:4px;min-width:150px">
-            <div style="font-size:20px;font-weight:700;color:#111">${dist} yards</div>
-            <div style="font-size:13px;color:#1a5c33;font-weight:600;margin-top:2px">
+            <div style="font-size:20px;font-weight:700;color:#111">${adjDist} yards</div>
+            ${elevAdj !== null ? `<div style="font-size:11px;color:#666;margin-top:2px">
+              ${rawDist}y flat · ${elevAdj > 0 ? '+' : ''}${elevAdj}ft elevation
+            </div>` : ''}
+            <div style="font-size:13px;color:#1a5c33;font-weight:600;margin-top:4px">
               Hit ${club.name} (${club.yards}y club)
             </div>
             <div style="font-size:11px;color:#888;margin-top:4px">
@@ -523,8 +561,9 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
           </div>
         `)
         infoWindowRef.current.open(map, endM)
-        setTapDist(dist)
+        setTapDist(adjDist)
         setTapClub(club)
+        setTapElevAdj(elevAdj)
         measureStartRef.current = null
       }
     })
@@ -541,6 +580,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
     infoWindowRef.current?.close()
     setTapDist(null)
     setTapClub(null)
+    setTapElevAdj(null)
     measureStartRef.current = null
     setShotMode('idle')
     shotModeRef.current = 'idle'
@@ -818,14 +858,28 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%',
               background: '#4ade80' }} />
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)',
-              textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-              Live distance to pin
+            <div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)',
+                textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                Live distance to pin
+              </div>
+              {elevDiff !== null && (
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                  {elevDiff > 0 ? `▲ ${elevDiff}ft uphill` : elevDiff < 0 ? `▼ ${Math.abs(elevDiff)}ft downhill` : 'Flat'}
+                </div>
+              )}
             </div>
           </div>
-          <div style={{ fontSize: 24, fontWeight: 700,
-            fontFamily: 'Bebas Neue', color: '#4ade80' }}>
-            {distanceToPin} yds
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 24, fontWeight: 700,
+              fontFamily: 'Bebas Neue', color: '#4ade80' }}>
+              {adjustedDistToPin || distanceToPin} yds
+            </div>
+            {adjustedDistToPin && adjustedDistToPin !== distanceToPin && (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+                {distanceToPin}y flat
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -894,6 +948,11 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
               textTransform: 'uppercase', letterSpacing: '0.07em' }}>Distance</div>
             <div style={{ fontSize: 36, fontWeight: 700,
               fontFamily: 'Bebas Neue', letterSpacing: 1 }}>{tapDist} yards</div>
+            {tapElevAdj !== null && (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                {tapElevAdj > 0 ? `▲ +${tapElevAdj}ft uphill` : tapElevAdj < 0 ? `▼ ${tapElevAdj}ft downhill` : 'Flat'}
+              </div>
+            )}
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)',

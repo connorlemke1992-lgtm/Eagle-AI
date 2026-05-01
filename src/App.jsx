@@ -27,6 +27,27 @@ function haversineYards(lat1, lon1, lat2, lon2) {
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1.094)
 }
 
+async function getElevationMeters(lat, lng) {
+  try {
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/elevation/json?locations=${lat},${lng}&key=${import.meta.env.VITE_GOOGLE_MAPS_KEY}`
+    )
+    const data = await res.json()
+    return data.results?.[0]?.elevation || null
+  } catch {
+    return null
+  }
+}
+
+// Returns adjusted yardage based on elevation difference
+// Rule of thumb: 1 yard adjustment per 3 feet of elevation change
+export function adjustYardsForElevation(yards, playerElevM, greenElevM) {
+  if (!playerElevM || !greenElevM) return yards
+  const diffFeet = (greenElevM - playerElevM) * 3.281
+  const adjustment = Math.round(diffFeet / 3)
+  return yards + adjustment
+}
+
 export default function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
@@ -46,7 +67,9 @@ export default function App() {
     } catch { return true }
   })
   const [playerPos, setPlayerPos] = useState(null)
+  const [playerElevation, setPlayerElevation] = useState(null)
   const [pinPos, setPinPos] = useState(null)
+  const [pinElevation, setPinElevation] = useState(null)
   const [distanceToPin, setDistanceToPin] = useState(null)
   const [shotHistory, setShotHistory] = useState([])
   const [roundHistory, setRoundHistory] = useState(() => {
@@ -56,6 +79,7 @@ export default function App() {
   })
   const [showProfile, setShowProfile] = useState(false)
   const lastHoleSwitch = useRef(null)
+  const lastElevationFetch = useRef(null)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -105,7 +129,6 @@ export default function App() {
     setRoundHistory(updated)
     localStorage.setItem('round_history', JSON.stringify(updated))
 
-    // Reset current round
     setScores(new Array(18).fill(null))
     setShotHistory([])
     localStorage.removeItem('hole_stats')
@@ -128,18 +151,44 @@ export default function App() {
     setShowProfile(false)
   }
 
+  // Watch GPS position + capture device altitude
   useEffect(() => {
     if (!navigator.geolocation) return
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => setPlayerPos({
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude
-      }),
+      (pos) => {
+        setPlayerPos({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        })
+        // Use device altitude if available
+        if (pos.coords.altitude !== null) {
+          setPlayerElevation(pos.coords.altitude)
+        }
+      },
       null,
       { enableHighAccuracy: true, timeout: 12000 }
     )
     return () => navigator.geolocation.clearWatch(watchId)
   }, [])
+
+  // Fetch Google elevation for player if device altitude not available
+  useEffect(() => {
+    if (!playerPos || playerElevation !== null) return
+    const now = Date.now()
+    if (lastElevationFetch.current && now - lastElevationFetch.current < 30000) return
+    lastElevationFetch.current = now
+    getElevationMeters(playerPos.lat, playerPos.lng).then(elev => {
+      if (elev !== null) setPlayerElevation(elev)
+    })
+  }, [playerPos])
+
+  // Fetch pin elevation when pin moves
+  useEffect(() => {
+    if (!pinPos) return
+    getElevationMeters(pinPos.lat, pinPos.lng).then(elev => {
+      if (elev !== null) setPinElevation(elev)
+    })
+  }, [pinPos])
 
   useEffect(() => {
     if (playerPos && pinPos) {
@@ -268,6 +317,8 @@ export default function App() {
             pinPos={pinPos}
             setPinPos={setPinPos}
             distanceToPin={distanceToPin}
+            playerElevation={playerElevation}
+            pinElevation={pinElevation}
           />
         )}
         {activeTab === 'scorecard' && (
@@ -310,6 +361,8 @@ export default function App() {
             setShowSearch={setShowCourseSearch}
             shotHistory={shotHistory}
             addShot={addShot}
+            playerElevation={playerElevation}
+            pinElevation={pinElevation}
           />
         )}
       </div>
