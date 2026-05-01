@@ -35,13 +35,6 @@ function bestClub(yards, bag) {
   )
 }
 
-// GolfAPI poi mapping confirmed from real data:
-// poi 12 = tee box
-// poi 1  = green center
-// poi 11 = front of green
-// poi 3  = back of green
-// poi 9  = hazard
-// poi 2  = fairway point
 function getHoleCoordinates(coordinates, holeNumber, selectedTee = 2) {
   if (!coordinates || !coordinates.length) return null
   const holeCoords = coordinates.filter(c => c.hole === holeNumber)
@@ -78,6 +71,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const infoWindowRef = useRef(null)
   const measureStartRef = useRef(null)
   const pinPulseRef = useRef(null)
+  const shotModeRef = useRef('idle')
 
   const [tapDist, setTapDist] = useState(null)
   const [tapClub, setTapClub] = useState(null)
@@ -105,7 +99,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const bag = loadBag()
 
-  // Support both local courses and GolfAPI courses
   const isGolfAPI = courseData?.course?.isGolfAPI
   const chosenTee = courseData?.course?.chosenTee
   const holes = courseData?.course?.holes ||
@@ -113,7 +106,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
                 courseData?.course?.tees?.female?.[0]?.holes || []
   const h = holes[currentHole]
 
-  // Get yardage — from holes array or GolfAPI length fields
   const hYards = h?.yardage || h?.yards ||
                  chosenTee?.[`length${currentHole + 1}`] || null
   const hPar = h?.par || null
@@ -312,6 +304,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     }
     setShotStart({ ...playerPos })
     setShotMode('waiting_for_ball')
+    shotModeRef.current = 'waiting_for_ball'
   }
 
   function handleBallIsHere() {
@@ -331,12 +324,14 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
       timestamp: new Date().toISOString(),
     })
     setShotMode('idle')
+    shotModeRef.current = 'idle'
     setShotStart(null)
     setShowClubPicker(true)
   }
 
   function cancelShot() {
     setShotMode('idle')
+    shotModeRef.current = 'idle'
     setShotStart(null)
   }
 
@@ -421,7 +416,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
     const teeCoords = getTeeCoords(currentHole)
     const greenCoords = getGreenCoords(currentHole)
 
-    // Tee box — white dot with T
     teeMarkerRef.current = new window.google.maps.Marker({
       position: teeCoords, map,
       icon: {
@@ -433,7 +427,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
       label: { text: 'T', color: '#333', fontSize: '10px', fontWeight: 'bold' }
     })
 
-    // Pin — green dot on green
     pinMarkerRef.current = new window.google.maps.Marker({
       position: greenCoords, map, draggable: true,
       icon: {
@@ -448,7 +441,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
       setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
     })
 
-    // Hazards — red dots
     const holeCoords = getHoleCoordinates(coordinates, currentHole + 1, selectedTee)
     if (holeCoords?.hazards?.length) {
       holeCoords.hazards.forEach(hazard => {
@@ -474,6 +466,9 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
 
   function addMapClickListener(map) {
     map.addListener('click', (e) => {
+      // Disable map clicks while tracking a shot
+      if (shotModeRef.current === 'waiting_for_ball') return
+
       if (!measureStartRef.current) {
         measureStartRef.current = e.latLng
         measureMarkersRef.current.forEach(m => m.setMap(null))
@@ -548,6 +543,7 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
     setTapClub(null)
     measureStartRef.current = null
     setShotMode('idle')
+    shotModeRef.current = 'idle'
     setShotStart(null)
     drawShotLines()
   }
@@ -569,7 +565,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
   return (
     <div style={{ padding: 16 }}>
 
-      {/* Pin placement prompt */}
       {showPinPrompt && (
         <div style={{ background: 'var(--g1)', borderRadius: 14,
           padding: 16, marginBottom: 12 }}>
@@ -611,7 +606,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         </div>
       )}
 
-      {/* Club picker */}
       {showClubPicker && pendingShot && (
         <div style={{ background: 'var(--g1)', borderRadius: 14,
           padding: 16, marginBottom: 12 }}>
@@ -656,7 +650,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         </div>
       )}
 
-      {/* Eagle shot analysis */}
       {(eagleAnalysis || analysisLoading) && (
         <div style={{ background: 'var(--g1)', borderRadius: 12,
           padding: 14, marginBottom: 12 }}>
@@ -680,7 +673,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         </div>
       )}
 
-      {/* Shot tracking */}
       <div style={{ display: 'grid',
         gridTemplateColumns: shotMode === 'waiting_for_ball' ? '1fr 1fr' : '1fr',
         gap: 8, marginBottom: 12 }}>
@@ -732,7 +724,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         </div>
       )}
 
-      {/* Shot history */}
       {holeShots.length > 0 && (
         <div style={{ marginBottom: 12 }}>
           <button onClick={() => setShowShotHistory(!showShotHistory)}
@@ -790,7 +781,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         </div>
       )}
 
-      {/* Course header */}
       <div style={{ display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
@@ -821,7 +811,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         </button>
       </div>
 
-      {/* Live distance */}
       {distanceToPin && (
         <div style={{ background: 'var(--g1)', borderRadius: 10,
           padding: '10px 14px', marginBottom: 12,
@@ -841,7 +830,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         </div>
       )}
 
-      {/* Move Pin */}
       <button onClick={() => setShowPinPrompt(true)}
         style={{ width: '100%', background: '#fff',
           border: '1px solid var(--bd)', borderRadius: 10,
@@ -862,7 +850,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
         <span style={{ fontSize: 16, color: 'var(--tx2)' }}>→</span>
       </button>
 
-      {/* Hole nav */}
       <div style={{ display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', marginBottom: 10 }}>
         <button onClick={() => setCurrentHole(Math.max(0, currentHole - 1))}
