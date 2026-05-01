@@ -29,23 +29,12 @@ function haversineYards(lat1, lon1, lat2, lon2) {
 
 async function getElevationMeters(lat, lng) {
   try {
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/elevation/json?locations=${lat},${lng}&key=${import.meta.env.VITE_GOOGLE_MAPS_KEY}`
-    )
+    const res = await fetch(`/api/elevation?lat=${lat}&lng=${lng}`)
     const data = await res.json()
     return data.results?.[0]?.elevation || null
   } catch {
     return null
   }
-}
-
-// Returns adjusted yardage based on elevation difference
-// Rule of thumb: 1 yard adjustment per 3 feet of elevation change
-export function adjustYardsForElevation(yards, playerElevM, greenElevM) {
-  if (!playerElevM || !greenElevM) return yards
-  const diffFeet = (greenElevM - playerElevM) * 3.281
-  const adjustment = Math.round(diffFeet / 3)
-  return yards + adjustment
 }
 
 export default function App() {
@@ -151,7 +140,6 @@ export default function App() {
     setShowProfile(false)
   }
 
-  // Watch GPS position + capture device altitude
   useEffect(() => {
     if (!navigator.geolocation) return
     const watchId = navigator.geolocation.watchPosition(
@@ -160,7 +148,6 @@ export default function App() {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         })
-        // Use device altitude if available
         if (pos.coords.altitude !== null) {
           setPlayerElevation(pos.coords.altitude)
         }
@@ -171,7 +158,6 @@ export default function App() {
     return () => navigator.geolocation.clearWatch(watchId)
   }, [])
 
-  // Fetch Google elevation for player if device altitude not available
   useEffect(() => {
     if (!playerPos || playerElevation !== null) return
     const now = Date.now()
@@ -182,7 +168,6 @@ export default function App() {
     })
   }, [playerPos])
 
-  // Fetch pin elevation when pin moves
   useEffect(() => {
     if (!pinPos) return
     getElevationMeters(pinPos.lat, pinPos.lng).then(elev => {
@@ -249,7 +234,6 @@ export default function App() {
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh',
       background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
 
-      {/* Header */}
       <div style={{ background: 'var(--g1)', padding: '12px 16px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
@@ -287,7 +271,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Profile dropdown */}
       {showProfile && (
         <div style={{ background: 'var(--g1)', padding: '12px 16px',
           borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
@@ -306,7 +289,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Tab content */}
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 70 }}>
         {activeTab === 'caddie' && (
           <Caddie
@@ -367,7 +349,6 @@ export default function App() {
         )}
       </div>
 
-      {/* Bottom nav */}
       <div style={{ position: 'fixed', bottom: 0, left: '50%',
         transform: 'translateX(-50%)', width: '100%', maxWidth: 480,
         background: '#fff', borderTop: '1px solid var(--bd)',

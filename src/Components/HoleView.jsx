@@ -12,9 +12,7 @@ function haversineYards(lat1, lon1, lat2, lon2) {
 
 async function getElevationMeters(lat, lng) {
   try {
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/elevation/json?locations=${lat},${lng}&key=${import.meta.env.VITE_GOOGLE_MAPS_KEY}`
-    )
+    const res = await fetch(`/api/elevation?lat=${lat}&lng=${lng}`)
     const data = await res.json()
     return data.results?.[0]?.elevation || null
   } catch {
@@ -137,7 +135,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     courseData?.selectedTeeLabel ||
     (selectedTee === 1 ? 'Back' : selectedTee === 3 ? 'Forward' : 'Middle')
 
-  // Elevation-adjusted distance to pin
   const adjustedDistToPin = distanceToPin
     ? adjustYardsForElevation(distanceToPin, playerElevation, pinElevation)
     : null
@@ -523,7 +520,6 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
           e.latLng.lat(), e.latLng.lng()
         )
 
-        // Fetch elevation for tapped target
         const targetElev = await getElevationMeters(e.latLng.lat(), e.latLng.lng())
         const adjDist = adjustYardsForElevation(rawDist, playerElevation, targetElev)
         const elevAdj = (playerElevation && targetElev)
@@ -865,7 +861,8 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
               </div>
               {elevDiff !== null && (
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
-                  {elevDiff > 0 ? `▲ ${elevDiff}ft uphill` : elevDiff < 0 ? `▼ ${Math.abs(elevDiff)}ft downhill` : 'Flat'}
+                  {elevDiff > 0 ? `▲ ${elevDiff}ft uphill` : elevDiff < 0
+                    ? `▼ ${Math.abs(elevDiff)}ft downhill` : 'Flat'}
                 </div>
               )}
             </div>
@@ -950,7 +947,8 @@ Was this a good strike? Any quick tip for the next shot? Plain text only, no mar
               fontFamily: 'Bebas Neue', letterSpacing: 1 }}>{tapDist} yards</div>
             {tapElevAdj !== null && (
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
-                {tapElevAdj > 0 ? `▲ +${tapElevAdj}ft uphill` : tapElevAdj < 0 ? `▼ ${tapElevAdj}ft downhill` : 'Flat'}
+                {tapElevAdj > 0 ? `▲ +${tapElevAdj}ft uphill` : tapElevAdj < 0
+                  ? `▼ ${tapElevAdj}ft downhill` : 'Flat'}
               </div>
             )}
           </div>
