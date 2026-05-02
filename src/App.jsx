@@ -184,19 +184,38 @@ export default function App() {
     }
   }, [playerPos, pinPos])
 
+  // Auto hole switching — works for both local and GolfAPI courses
   useEffect(() => {
     if (!playerPos || !selectedCourse) return
-    const holes = selectedCourse?.course?.tees?.male?.[0]?.holes ||
+
+    const holes = selectedCourse?.course?.holes ||
+                  selectedCourse?.course?.tees?.male?.[0]?.holes ||
                   selectedCourse?.course?.tees?.female?.[0]?.holes || []
+
     if (holes.length === 0) return
+
+    const coordinates = selectedCourse?.course?.coordinates || []
     const courseLat = selectedCourse?.course?.location?.latitude
     const courseLng = selectedCourse?.course?.location?.longitude
     if (!courseLat || !courseLng) return
 
-    const holePositions = holes.map((_, i) => ({
-      lat: courseLat + (Math.sin(i * 1.2) * 0.0008),
-      lng: courseLng + (Math.cos(i * 1.2) * 0.0008),
-    }))
+    // Use real GPS coordinates if available, otherwise estimate
+    const holePositions = holes.map((_, i) => {
+      if (coordinates.length > 0) {
+        const holeCoords = coordinates.filter(c => c.hole === i + 1)
+        const tee = holeCoords.find(c => c.poi === 12)
+        if (tee) {
+          return {
+            lat: parseFloat(tee.latitude),
+            lng: parseFloat(tee.longitude)
+          }
+        }
+      }
+      return {
+        lat: courseLat + (Math.sin(i * 1.2) * 0.0008),
+        lng: courseLng + (Math.cos(i * 1.2) * 0.0008)
+      }
+    })
 
     let closestHole = 0
     let closestDist = Infinity
@@ -234,7 +253,6 @@ export default function App() {
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh',
       background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
 
-      {/* Header */}
       <div style={{ background: 'var(--g1)', padding: '12px 16px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
@@ -272,7 +290,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Profile dropdown */}
       {showProfile && (
         <div style={{ background: 'var(--g1)', padding: '12px 16px',
           borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
@@ -291,7 +308,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Tab content */}
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 70 }}>
         {activeTab === 'caddie' && (
           <Caddie
@@ -354,7 +370,6 @@ export default function App() {
         )}
       </div>
 
-      {/* Bottom nav */}
       <div style={{ position: 'fixed', bottom: 0, left: '50%',
         transform: 'translateX(-50%)', width: '100%', maxWidth: 480,
         background: '#fff', borderTop: '1px solid var(--bd)',
