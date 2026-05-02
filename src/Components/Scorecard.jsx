@@ -110,7 +110,6 @@ export default function Scorecard({ scores, setScores, currentHole,
   const [courseRating, setCourseRating] = useState('')
   const [slopeRating, setSlopeRating] = useState('')
 
-  // Reset holeStats when round is cleared
   useEffect(() => {
     const allNull = scores.every(s => s === null)
     if (allNull) {
@@ -453,6 +452,8 @@ export default function Scorecard({ scores, setScores, currentHole,
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => {
+              setHoleStats({})
+              saveHoleStats({})
               onClearRound()
               setShowClearConfirm(false)
             }}
