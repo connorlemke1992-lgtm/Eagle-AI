@@ -13,34 +13,34 @@ function calculateHandicap(rounds) {
   if (differentials.length === 0) return null
 
   const last20 = differentials.slice(0, 20)
+  const n = last20.length
 
-  let numToUse
-  if (last20.length <= 3) numToUse = 1
-  else if (last20.length <= 4) numToUse = 1
-  else if (last20.length <= 5) numToUse = 1
-  else if (last20.length <= 6) numToUse = 2
-  else if (last20.length <= 8) numToUse = 2
-  else if (last20.length <= 9) numToUse = 3
-  else if (last20.length <= 11) numToUse = 3
-  else if (last20.length <= 12) numToUse = 4
-  else if (last20.length <= 14) numToUse = 4
-  else if (last20.length <= 15) numToUse = 5
-  else if (last20.length <= 16) numToUse = 6
-  else if (last20.length <= 17) numToUse = 7
-  else if (last20.length <= 18) numToUse = 8
-  else if (last20.length <= 19) numToUse = 8
-  else numToUse = 8
+  // WHS official table
+  let numToUse, adjustment
+  if (n <= 2)      { return null }
+  else if (n === 3)  { numToUse = 1; adjustment = -2.0 }
+  else if (n === 4)  { numToUse = 1; adjustment = -1.0 }
+  else if (n === 5)  { numToUse = 1; adjustment = 0 }
+  else if (n === 6)  { numToUse = 2; adjustment = -1.0 }
+  else if (n <= 8)   { numToUse = 2; adjustment = 0 }
+  else if (n <= 11)  { numToUse = 3; adjustment = 0 }
+  else if (n <= 14)  { numToUse = 4; adjustment = 0 }
+  else if (n <= 16)  { numToUse = 5; adjustment = 0 }
+  else if (n <= 18)  { numToUse = 6; adjustment = 0 }
+  else if (n === 19) { numToUse = 7; adjustment = 0 }
+  else               { numToUse = 8; adjustment = 0 }
 
   const sorted = [...last20].sort((a, b) => a.differential - b.differential)
   const best = sorted.slice(0, numToUse)
   const avgDiff = best.reduce((a, b) => a + b.differential, 0) / best.length
-  const handicapIndex = parseFloat((avgDiff * 0.96).toFixed(1))
+  const handicapIndex = parseFloat(((avgDiff * 0.96) + adjustment).toFixed(1))
 
   return {
     index: handicapIndex,
     differentials: last20,
     bestRounds: best.map(r => r.id),
-    numUsed: numToUse
+    numUsed: numToUse,
+    adjustment
   }
 }
 
@@ -185,13 +185,11 @@ export default function Handicap({ onBack }) {
   return (
     <div style={{ padding: 16 }}>
 
-      {/* Back button */}
       <button onClick={onBack}
         style={{ border: '1px solid var(--bd)', borderRadius: 8,
           background: '#fff', padding: '6px 14px', cursor: 'pointer',
           fontSize: 13, marginBottom: 16 }}>← Back</button>
 
-      {/* Header */}
       <div style={{ fontFamily: 'Bebas Neue', fontSize: 26, marginBottom: 4 }}>
         My Handicap
       </div>
@@ -199,7 +197,6 @@ export default function Handicap({ onBack }) {
         World Handicap System (WHS) calculation
       </div>
 
-      {/* Main handicap display */}
       <div style={{ background: 'var(--g1)', borderRadius: 14,
         padding: 20, marginBottom: 16 }}>
         <div style={{ textAlign: 'center', marginBottom: 16 }}>
@@ -232,12 +229,12 @@ export default function Handicap({ onBack }) {
             </div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
               Average differential × 0.96
+              {result.adjustment !== 0 && ` + ${result.adjustment} adjustment`}
             </div>
           </div>
         )}
       </div>
 
-      {/* Add Manual Round button */}
       {!showAddRound ? (
         <button onClick={() => setShowAddRound(true)}
           style={{ width: '100%', background: '#fff',
@@ -254,7 +251,6 @@ export default function Handicap({ onBack }) {
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)',
             marginBottom: 16 }}>➕ Add Past Round</div>
 
-          {/* Course name */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
               marginBottom: 6 }}>Course Name</div>
@@ -266,7 +262,6 @@ export default function Handicap({ onBack }) {
                 boxSizing: 'border-box' }} />
           </div>
 
-          {/* Date */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
               marginBottom: 6 }}>Date Played</div>
@@ -277,7 +272,6 @@ export default function Handicap({ onBack }) {
                 boxSizing: 'border-box' }} />
           </div>
 
-          {/* Score */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
               marginBottom: 6 }}>Total Score</div>
@@ -289,7 +283,6 @@ export default function Handicap({ onBack }) {
                 boxSizing: 'border-box' }} />
           </div>
 
-          {/* Course Rating + Slope */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr',
             gap: 10, marginBottom: 12 }}>
             <div>
@@ -334,10 +327,7 @@ export default function Handicap({ onBack }) {
                 cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>
               ✅ Save Round
             </button>
-            <button onClick={() => {
-              setShowAddRound(false)
-              setAddError('')
-            }}
+            <button onClick={() => { setShowAddRound(false); setAddError('') }}
               style={{ flex: 1, background: 'var(--bg2)',
                 border: '1px solid var(--bd)', borderRadius: 10,
                 padding: '12px', cursor: 'pointer',
@@ -348,7 +338,6 @@ export default function Handicap({ onBack }) {
         </div>
       )}
 
-      {/* No rounds yet */}
       {roundHistory.length === 0 && (
         <div style={{ background: 'var(--bg2)', borderRadius: 12,
           padding: 20, textAlign: 'center', marginBottom: 16 }}>
@@ -363,7 +352,6 @@ export default function Handicap({ onBack }) {
         </div>
       )}
 
-      {/* Course ratings needed warning */}
       {roundsWithRatings.length === 0 && roundHistory.length > 0 && (
         <div style={{ background: '#fef3c7', borderRadius: 12,
           padding: 14, marginBottom: 16 }}>
@@ -377,7 +365,6 @@ export default function Handicap({ onBack }) {
         </div>
       )}
 
-      {/* Round differentials */}
       {differentials.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
@@ -449,7 +436,6 @@ export default function Handicap({ onBack }) {
         </div>
       )}
 
-      {/* All rounds without ratings */}
       {roundHistory.filter(r => !r.courseRating || !r.slope).length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
