@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const gamesList = [
   { id: 'skins', icon: '💀', name: 'Skins', desc: 'Win a hole outright, take the pot. Ties carry over.' },
@@ -6,56 +6,77 @@ const gamesList = [
   { id: 'wolf', icon: '🐺', name: 'Wolf', desc: 'Rotating team game — the Wolf picks a partner each hole.' },
 ]
 
-// ─── SKINS ───────────────────────────────────────────────────────────────────
+function saveGame(key, data) {
+  try { localStorage.setItem(key, JSON.stringify(data)) } catch {}
+}
 
-function SkinsGame() {
-  const [numPlayers, setNumPlayers] = useState(null)
-  const [players, setPlayers] = useState([])
-  const [setup, setSetup] = useState(true)
-  const [currentHole, setCurrentHole] = useState(1)
-  const [scores, setScores] = useState({}) // { holeNum: { playerIndex: score } }
-  const [skins, setSkins] = useState([]) // array of { hole, winner, carried }
-  const [carryover, setCarryover] = useState(0)
-  const [holeScores, setHoleScores] = useState({}) // current hole input
-  const [history, setHistory] = useState([])
-  const [phase, setPhase] = useState('scoring') // scoring | done
+function loadGame(key) {
+  try {
+    const s = localStorage.getItem(key)
+    return s ? JSON.parse(s) : null
+  } catch { return null }
+}
+
+function clearGame(key) {
+  try { localStorage.removeItem(key) } catch {}
+}
+
+// ─── SKINS ────────────────────────────────────────────────────────────────────
+
+function SkinsGame({ onExit }) {
+  const saved = loadGame('game_skins')
+
+  const [numPlayers, setNumPlayers] = useState(saved?.numPlayers || null)
+  const [players, setPlayers] = useState(saved?.players || [])
+  const [setup, setSetup] = useState(saved?.setup ?? true)
+  const [currentHole, setCurrentHole] = useState(saved?.currentHole || 1)
+  const [skins, setSkins] = useState(saved?.skins || [])
+  const [carryover, setCarryover] = useState(saved?.carryover || 0)
+  const [holeScores, setHoleScores] = useState({})
+  const [phase, setPhase] = useState(saved?.phase || 'scoring')
+
+  // Save state whenever it changes
+  useEffect(() => {
+    if (!setup && players.length > 0) {
+      saveGame('game_skins', { numPlayers, players, setup, currentHole, skins, carryover, phase })
+    }
+  }, [numPlayers, players, setup, currentHole, skins, carryover, phase])
+
+  const skinCount = {}
+  players.forEach(p => { skinCount[p] = 0 })
+  skins.forEach(s => {
+    if (s.winner) skinCount[s.winner] = (skinCount[s.winner] || 0) + s.skinsWon
+  })
 
   function startGame() {
     setSetup(false)
     setCurrentHole(1)
     setCarryover(0)
     setSkins([])
-    setHistory([])
-    setScores({})
     setHoleScores({})
+    setPhase('scoring')
   }
 
   function submitHole() {
-    // Check all players have scores
     if (players.some((_, i) => holeScores[i] === undefined || holeScores[i] === '')) return
-
     const scoreArr = players.map((_, i) => parseInt(holeScores[i]))
     const minScore = Math.min(...scoreArr)
     const winners = players.filter((_, i) => scoreArr[i] === minScore)
-
     let newCarryover = carryover
     let skinWinner = null
-
+    let newSkins
     if (winners.length === 1) {
       skinWinner = winners[0]
       const skinsWon = 1 + carryover
-      setSkins(prev => [...prev, { hole: currentHole, winner: skinWinner, skinsWon }])
+      newSkins = [...skins, { hole: currentHole, winner: skinWinner, skinsWon }]
       newCarryover = 0
     } else {
-      // Tie — carry over
+      newSkins = [...skins, { hole: currentHole, winner: null, tied: true, skinsWon: 0 }]
       newCarryover = carryover + 1
-      setSkins(prev => [...prev, { hole: currentHole, winner: null, tied: true, skinsWon: 0 }])
     }
-
-    setHistory(prev => [...prev, { hole: currentHole, scores: { ...holeScores }, winner: skinWinner, carryover: newCarryover }])
+    setSkins(newSkins)
     setCarryover(newCarryover)
     setHoleScores({})
-
     if (currentHole >= 18) {
       setPhase('done')
     } else {
@@ -63,12 +84,17 @@ function SkinsGame() {
     }
   }
 
-  // Count skins per player
-  const skinCount = {}
-  players.forEach(p => { skinCount[p] = 0 })
-  skins.forEach(s => {
-    if (s.winner) skinCount[s.winner] = (skinCount[s.winner] || 0) + s.skinsWon
-  })
+  function resetGame() {
+    clearGame('game_skins')
+    setNumPlayers(null)
+    setSetup(true)
+    setPhase('scoring')
+    setCurrentHole(1)
+    setCarryover(0)
+    setSkins([])
+    setHoleScores({})
+    setPlayers([])
+  }
 
   if (!numPlayers) {
     return (
@@ -102,11 +128,7 @@ function SkinsGame() {
             <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 4,
               textTransform: 'uppercase', letterSpacing: '0.05em' }}>Player {i + 1}</div>
             <input value={p}
-              onChange={e => {
-                const n = [...players]
-                n[i] = e.target.value
-                setPlayers(n)
-              }}
+              onChange={e => { const n = [...players]; n[i] = e.target.value; setPlayers(n) }}
               style={{ width: '100%', border: '1px solid var(--bd)', borderRadius: 8,
                 padding: '10px 12px', fontSize: 14, background: '#fff', color: 'var(--tx)' }} />
           </div>
@@ -145,9 +167,7 @@ function SkinsGame() {
             borderRadius: 10, padding: '12px 16px', marginBottom: 8,
             display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontSize: 20 }}>
-                {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '4️⃣'}
-              </div>
+              <div style={{ fontSize: 20 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '4️⃣'}</div>
               <div style={{ fontSize: 15, fontWeight: 600,
                 color: i === 0 ? '#fff' : 'var(--tx)' }}>{p.name}</div>
             </div>
@@ -168,23 +188,13 @@ function SkinsGame() {
               borderBottom: i < skins.length - 1 ? '1px solid var(--bd)' : 'none',
               display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
               <div style={{ color: 'var(--tx2)' }}>Hole {s.hole}</div>
-              <div style={{ fontWeight: 600,
-                color: s.winner ? 'var(--g2)' : '#f59e0b' }}>
+              <div style={{ fontWeight: 600, color: s.winner ? 'var(--g2)' : '#f59e0b' }}>
                 {s.winner ? `${s.winner} wins ${s.skinsWon} skin${s.skinsWon > 1 ? 's' : ''}` : 'Tied — carry over'}
               </div>
             </div>
           ))}
         </div>
-        <button onClick={() => {
-          setNumPlayers(null)
-          setSetup(true)
-          setPhase('scoring')
-          setCurrentHole(1)
-          setCarryover(0)
-          setSkins([])
-          setHistory([])
-          setHoleScores({})
-        }}
+        <button onClick={resetGame}
           style={{ width: '100%', background: 'var(--bg2)', color: 'var(--tx)',
             border: '1px solid var(--bd)', borderRadius: 10, padding: '10px',
             fontSize: 14, cursor: 'pointer', marginTop: 12 }}>
@@ -203,11 +213,10 @@ function SkinsGame() {
           Hole {currentHole} of 18
         </div>
         <div style={{ fontFamily: 'Bebas Neue', fontSize: 24, color: '#fff', marginTop: 2 }}>
-          💀 Skins · {carryover > 0 ? `${carryover + 1} skins up for grabs!` : '1 skin up for grabs'}
+          💀 {carryover > 0 ? `${carryover + 1} skins up for grabs!` : '1 skin up for grabs'}
         </div>
       </div>
 
-      {/* Skin counts */}
       <div style={{ display: 'grid',
         gridTemplateColumns: `repeat(${players.length},1fr)`,
         gap: 6, marginBottom: 12 }}>
@@ -223,7 +232,6 @@ function SkinsGame() {
         ))}
       </div>
 
-      {/* Score entry */}
       <div style={{ background: '#fff', border: '1px solid var(--bd)',
         borderRadius: 12, padding: 14, marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
@@ -250,18 +258,24 @@ function SkinsGame() {
 
       <button onClick={submitHole}
         disabled={players.some((_, i) => holeScores[i] === undefined)}
-        style={{ width: '100%', background: players.some((_, i) => holeScores[i] === undefined)
-          ? 'var(--bg2)' : 'var(--g1)',
+        style={{ width: '100%',
+          background: players.some((_, i) => holeScores[i] === undefined) ? 'var(--bg2)' : 'var(--g1)',
           color: players.some((_, i) => holeScores[i] === undefined) ? 'var(--tx2)' : '#fff',
           border: 'none', borderRadius: 10, padding: '13px',
           fontSize: 15, fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}>
         Submit Hole {currentHole} →
       </button>
 
-      {/* Recent history */}
+      <button onClick={resetGame}
+        style={{ width: '100%', background: 'transparent',
+          border: '1px solid #fca5a5', borderRadius: 10, padding: '10px',
+          fontSize: 13, cursor: 'pointer', color: '#991b1b' }}>
+        🗑️ Abandon Game
+      </button>
+
       {skins.length > 0 && (
         <div style={{ background: '#fff', border: '1px solid var(--bd)',
-          borderRadius: 12, overflow: 'hidden' }}>
+          borderRadius: 12, overflow: 'hidden', marginTop: 12 }}>
           <div style={{ background: 'var(--bg2)', padding: '8px 14px',
             fontSize: 11, color: 'var(--tx2)', fontWeight: 600,
             textTransform: 'uppercase' }}>Recent</div>
@@ -283,16 +297,23 @@ function SkinsGame() {
 
 // ─── MATCH PLAY ───────────────────────────────────────────────────────────────
 
-function MatchPlayGame() {
-  const [format, setFormat] = useState(null) // '1v1' | '2v2'
-  const [players, setPlayers] = useState(['Player 1', 'Player 2', 'Player 3', 'Player 4'])
-  const [setup, setSetup] = useState(true)
-  const [currentHole, setCurrentHole] = useState(1)
+function MatchPlayGame({ onExit }) {
+  const saved = loadGame('game_match')
+
+  const [format, setFormat] = useState(saved?.format || null)
+  const [players, setPlayers] = useState(saved?.players || ['Player 1', 'Player 2', 'Player 3', 'Player 4'])
+  const [setup, setSetup] = useState(saved?.setup ?? true)
+  const [currentHole, setCurrentHole] = useState(saved?.currentHole || 1)
   const [holeScores, setHoleScores] = useState({})
-  const [matchScore, setMatchScore] = useState(0) // positive = team1 up, negative = team2 up
-  const [history, setHistory] = useState([])
-  const [phase, setPhase] = useState('scoring')
-  const [holesRemaining, setHolesRemaining] = useState(18)
+  const [matchScore, setMatchScore] = useState(saved?.matchScore || 0)
+  const [history, setHistory] = useState(saved?.history || [])
+  const [phase, setPhase] = useState(saved?.phase || 'scoring')
+
+  useEffect(() => {
+    if (!setup && format) {
+      saveGame('game_match', { format, players, setup, currentHole, matchScore, history, phase })
+    }
+  }, [format, players, setup, currentHole, matchScore, history, phase])
 
   const team1 = format === '1v1' ? [players[0]] : [players[0], players[1]]
   const team2 = format === '1v1' ? [players[1]] : [players[2], players[3]]
@@ -307,36 +328,26 @@ function MatchPlayGame() {
     return `${leader} ${up} UP`
   }
 
-  function isMatchOver() {
-    const holesLeft = 18 - currentHole + 1
-    return Math.abs(matchScore) > holesLeft
-  }
-
   function submitHole() {
-    const numPlayers = allPlayers.length
     if (allPlayers.some((_, i) => holeScores[i] === undefined)) return
-
     let team1Score, team2Score
     if (format === '1v1') {
       team1Score = parseInt(holeScores[0])
       team2Score = parseInt(holeScores[1])
     } else {
-      // Best ball — best score from each team
       team1Score = Math.min(parseInt(holeScores[0]), parseInt(holeScores[1]))
       team2Score = Math.min(parseInt(holeScores[2]), parseInt(holeScores[3]))
     }
-
     let newMatchScore = matchScore
     let holeResult = 'halved'
     if (team1Score < team2Score) { newMatchScore += 1; holeResult = 'team1' }
     else if (team2Score < team1Score) { newMatchScore -= 1; holeResult = 'team2' }
 
-    setHistory(prev => [...prev, {
-      hole: currentHole,
-      scores: { ...holeScores },
-      result: holeResult,
-      matchScore: newMatchScore
-    }])
+    const newHistory = [...history, {
+      hole: currentHole, scores: { ...holeScores },
+      result: holeResult, matchScore: newMatchScore
+    }]
+    setHistory(newHistory)
     setMatchScore(newMatchScore)
     setHoleScores({})
 
@@ -348,15 +359,25 @@ function MatchPlayGame() {
     }
   }
 
+  function resetGame() {
+    clearGame('game_match')
+    setFormat(null)
+    setSetup(true)
+    setPhase('scoring')
+    setCurrentHole(1)
+    setMatchScore(0)
+    setHistory([])
+    setHoleScores({})
+    setPlayers(['Player 1', 'Player 2', 'Player 3', 'Player 4'])
+  }
+
   if (!format) {
     return (
       <div style={{ padding: 16 }}>
         <div style={{ fontFamily: 'Bebas Neue', fontSize: 22, marginBottom: 4 }}>
           ⚔️ Match Play — Format
         </div>
-        <div style={{ fontSize: 13, color: 'var(--tx2)', marginBottom: 20 }}>
-          Choose your format
-        </div>
+        <div style={{ fontSize: 13, color: 'var(--tx2)', marginBottom: 20 }}>Choose your format</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button onClick={() => { setFormat('1v1'); setPlayers(['Player 1', 'Player 2', '', '']) }}
             style={{ background: 'var(--g1)', border: 'none', borderRadius: 14,
@@ -364,9 +385,7 @@ function MatchPlayGame() {
               display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ fontSize: 36 }}>👤</div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
-                1v1 Singles
-              </div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>1v1 Singles</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
                 Head to head. Lowest score wins each hole.
               </div>
@@ -378,9 +397,7 @@ function MatchPlayGame() {
               display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ fontSize: 36 }}>👥</div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
-                2v2 Best Ball
-              </div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>2v2 Best Ball</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
                 Teams of 2. Best score from each team wins the hole.
               </div>
@@ -400,24 +417,20 @@ function MatchPlayGame() {
         <div style={{ fontSize: 13, color: 'var(--tx2)', marginBottom: 16 }}>
           {format === '1v1' ? 'Enter 2 player names' : 'Enter team names'}
         </div>
-
         {format === '1v1' ? (
-          <>
-            {[0, 1].map(i => (
-              <div key={i} style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 4,
-                  textTransform: 'uppercase', letterSpacing: '0.05em' }}>Player {i + 1}</div>
-                <input value={players[i]}
-                  onChange={e => { const n = [...players]; n[i] = e.target.value; setPlayers(n) }}
-                  style={{ width: '100%', border: '1px solid var(--bd)', borderRadius: 8,
-                    padding: '10px 12px', fontSize: 14, background: '#fff', color: 'var(--tx)' }} />
-              </div>
-            ))}
-          </>
+          [0, 1].map(i => (
+            <div key={i} style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 4,
+                textTransform: 'uppercase', letterSpacing: '0.05em' }}>Player {i + 1}</div>
+              <input value={players[i]}
+                onChange={e => { const n = [...players]; n[i] = e.target.value; setPlayers(n) }}
+                style={{ width: '100%', border: '1px solid var(--bd)', borderRadius: 8,
+                  padding: '10px 12px', fontSize: 14, background: '#fff', color: 'var(--tx)' }} />
+            </div>
+          ))
         ) : (
           <>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--g2)',
-              marginBottom: 8 }}>Team 1</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--g2)', marginBottom: 8 }}>Team 1</div>
             {[0, 1].map(i => (
               <div key={i} style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 4,
@@ -442,7 +455,6 @@ function MatchPlayGame() {
             ))}
           </>
         )}
-
         <button onClick={() => setSetup(false)}
           style={{ width: '100%', background: 'var(--g1)', color: '#fff',
             border: 'none', borderRadius: 10, padding: '12px',
@@ -459,43 +471,35 @@ function MatchPlayGame() {
     const up = Math.abs(matchScore)
     return (
       <div style={{ padding: 16 }}>
-        <div style={{ fontFamily: 'Bebas Neue', fontSize: 22, marginBottom: 12 }}>
-          ⚔️ Match Complete
-        </div>
+        <div style={{ fontFamily: 'Bebas Neue', fontSize: 22, marginBottom: 12 }}>⚔️ Match Complete</div>
         <div style={{ background: 'var(--g1)', borderRadius: 14, padding: 20,
           textAlign: 'center', marginBottom: 16 }}>
           {winner ? (
             <>
               <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)',
                 textTransform: 'uppercase', marginBottom: 8 }}>Winner</div>
-              <div style={{ fontFamily: 'Bebas Neue', fontSize: 36,
-                color: '#4ade80', marginBottom: 4 }}>{winner}</div>
-              <div style={{ fontSize: 16, color: '#fff' }}>
-                {up}&{holesLeft > 0 ? holesLeft : 'OH'}
+              <div style={{ fontFamily: 'Bebas Neue', fontSize: 36, color: '#4ade80', marginBottom: 4 }}>
+                {winner}
               </div>
+              <div style={{ fontSize: 16, color: '#fff' }}>{up}&{holesLeft > 0 ? holesLeft : 'OH'}</div>
             </>
           ) : (
             <>
-              <div style={{ fontFamily: 'Bebas Neue', fontSize: 36, color: '#fff' }}>
-                All Square
-              </div>
-              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
-                Match ended tied after 18
-              </div>
+              <div style={{ fontFamily: 'Bebas Neue', fontSize: 36, color: '#fff' }}>All Square</div>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Match ended tied after 18</div>
             </>
           )}
         </div>
-
         <div style={{ background: '#fff', border: '1px solid var(--bd)',
           borderRadius: 12, overflow: 'hidden', marginBottom: 12 }}>
           <div style={{ background: 'var(--bg2)', padding: '8px 14px',
-            fontSize: 11, color: 'var(--tx2)', fontWeight: 600,
-            textTransform: 'uppercase' }}>Hole by Hole</div>
+            fontSize: 11, color: 'var(--tx2)', fontWeight: 600, textTransform: 'uppercase' }}>
+            Hole by Hole
+          </div>
           {history.map((h, i) => (
             <div key={i} style={{ padding: '8px 14px',
               borderBottom: i < history.length - 1 ? '1px solid var(--bd)' : 'none',
-              display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', fontSize: 12 }}>
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
               <div style={{ color: 'var(--tx2)' }}>Hole {h.hole}</div>
               <div style={{ fontWeight: 600,
                 color: h.result === 'halved' ? 'var(--tx2)'
@@ -512,16 +516,7 @@ function MatchPlayGame() {
             </div>
           ))}
         </div>
-
-        <button onClick={() => {
-          setFormat(null)
-          setSetup(true)
-          setPhase('scoring')
-          setCurrentHole(1)
-          setMatchScore(0)
-          setHistory([])
-          setHoleScores({})
-        }}
+        <button onClick={resetGame}
           style={{ width: '100%', background: 'var(--bg2)', color: 'var(--tx)',
             border: '1px solid var(--bd)', borderRadius: 10, padding: '10px',
             fontSize: 14, cursor: 'pointer' }}>
@@ -533,7 +528,6 @@ function MatchPlayGame() {
 
   return (
     <div style={{ padding: 16 }}>
-      {/* Match status */}
       <div style={{ background: 'var(--g1)', borderRadius: 12,
         padding: '14px 16px', marginBottom: 12 }}>
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
@@ -541,34 +535,26 @@ function MatchPlayGame() {
           Hole {currentHole} of 18
         </div>
         <div style={{ fontFamily: 'Bebas Neue', fontSize: 28,
-          color: matchScore === 0 ? '#fff' : matchScore > 0 ? '#4ade80' : '#fca5a5',
-          marginTop: 2 }}>
+          color: matchScore === 0 ? '#fff' : matchScore > 0 ? '#4ade80' : '#fca5a5', marginTop: 2 }}>
           {getStatusText()}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between',
-          marginTop: 8, fontSize: 12 }}>
-          <div style={{ color: 'rgba(255,255,255,0.7)' }}>
-            {team1.join(' & ')}
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 12 }}>
+          <div style={{ color: 'rgba(255,255,255,0.7)' }}>{team1.join(' & ')}</div>
           <div style={{ color: 'rgba(255,255,255,0.4)' }}>vs</div>
-          <div style={{ color: 'rgba(255,255,255,0.7)' }}>
-            {team2.join(' & ')}
-          </div>
+          <div style={{ color: 'rgba(255,255,255,0.7)' }}>{team2.join(' & ')}</div>
         </div>
       </div>
 
-      {/* Score entry */}
       <div style={{ background: '#fff', border: '1px solid var(--bd)',
         borderRadius: 12, padding: 14, marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
           Enter scores for hole {currentHole}:
         </div>
-
         {format === '2v2' && (
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--g2)',
             marginBottom: 8, textTransform: 'uppercase' }}>Team 1</div>
         )}
-        {(format === '1v1' ? [0, 1] : [0, 1]).map(i => (
+        {[0, 1].map(i => (
           <div key={i} style={{ display: 'flex', alignItems: 'center',
             justifyContent: 'space-between', marginBottom: 10 }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>{players[i]}</div>
@@ -585,7 +571,6 @@ function MatchPlayGame() {
             </div>
           </div>
         ))}
-
         {format === '2v2' && (
           <>
             <div style={{ fontSize: 11, fontWeight: 600, color: '#dc2626',
@@ -614,20 +599,27 @@ function MatchPlayGame() {
       <button onClick={submitHole}
         disabled={allPlayers.some((_, i) => holeScores[i] === undefined)}
         style={{ width: '100%',
-          background: allPlayers.some((_, i) => holeScores[i] === undefined)
-            ? 'var(--bg2)' : 'var(--g1)',
+          background: allPlayers.some((_, i) => holeScores[i] === undefined) ? 'var(--bg2)' : 'var(--g1)',
           color: allPlayers.some((_, i) => holeScores[i] === undefined) ? 'var(--tx2)' : '#fff',
           border: 'none', borderRadius: 10, padding: '13px',
-          fontSize: 15, fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}>
+          fontSize: 15, fontWeight: 600, cursor: 'pointer', marginBottom: 8 }}>
         Submit Hole {currentHole} →
+      </button>
+
+      <button onClick={resetGame}
+        style={{ width: '100%', background: 'transparent',
+          border: '1px solid #fca5a5', borderRadius: 10, padding: '10px',
+          fontSize: 13, cursor: 'pointer', color: '#991b1b', marginBottom: 12 }}>
+        🗑️ Abandon Game
       </button>
 
       {history.length > 0 && (
         <div style={{ background: '#fff', border: '1px solid var(--bd)',
           borderRadius: 12, overflow: 'hidden' }}>
           <div style={{ background: 'var(--bg2)', padding: '8px 14px',
-            fontSize: 11, color: 'var(--tx2)', fontWeight: 600,
-            textTransform: 'uppercase' }}>Recent</div>
+            fontSize: 11, color: 'var(--tx2)', fontWeight: 600, textTransform: 'uppercase' }}>
+            Recent
+          </div>
           {[...history].reverse().slice(0, 4).map((h, i) => (
             <div key={i} style={{ padding: '8px 14px',
               borderBottom: i < Math.min(history.length, 4) - 1 ? '1px solid var(--bd)' : 'none',
@@ -653,26 +645,32 @@ function MatchPlayGame() {
   )
 }
 
-// ─── WOLF (fixed scoring) ─────────────────────────────────────────────────────
+// ─── WOLF ─────────────────────────────────────────────────────────────────────
 
-function WolfGame() {
-  const [players, setPlayers] = useState(['Player 1', 'Player 2', 'Player 3', 'Player 4'])
-  const [setup, setSetup] = useState(true)
-  const [currentHole, setCurrentHole] = useState(1)
-  const [wolfIndex, setWolfIndex] = useState(0)
-  const [points, setPoints] = useState([0, 0, 0, 0])
-  const [phase, setPhase] = useState('picking')
-  const [partner, setPartner] = useState(null)
-  const [loneWolf, setLoneWolf] = useState(false)
-  const [history, setHistory] = useState([])
+function WolfGame({ onExit }) {
+  const saved = loadGame('game_wolf')
+
+  const [players, setPlayers] = useState(saved?.players || ['Player 1', 'Player 2', 'Player 3', 'Player 4'])
+  const [setup, setSetup] = useState(saved?.setup ?? true)
+  const [currentHole, setCurrentHole] = useState(saved?.currentHole || 1)
+  const [wolfIndex, setWolfIndex] = useState(saved?.wolfIndex || 0)
+  const [points, setPoints] = useState(saved?.points || [0, 0, 0, 0])
+  const [phase, setPhase] = useState(saved?.phase || 'picking')
+  const [partner, setPartner] = useState(saved?.partner ?? null)
+  const [loneWolf, setLoneWolf] = useState(saved?.loneWolf || false)
+  const [history, setHistory] = useState(saved?.history || [])
+
+  useEffect(() => {
+    if (!setup) {
+      saveGame('game_wolf', { players, setup, currentHole, wolfIndex, points, phase, partner, loneWolf, history })
+    }
+  }, [players, setup, currentHole, wolfIndex, points, phase, partner, loneWolf, history])
 
   const wolf = players[wolfIndex]
   const nonWolves = players.map((p, i) => ({ name: p, index: i }))
     .filter(p => p.index !== wolfIndex)
 
-  function nextWolf(hole) {
-    return (hole - 1) % 4
-  }
+  function nextWolf(hole) { return (hole - 1) % 4 }
 
   function pickPartner(index) {
     setPartner(index)
@@ -692,36 +690,30 @@ function WolfGame() {
 
     if (loneWolf) {
       if (wolfWon) {
-        // Lone wolf wins — gets 2 from each of 3 opponents
         newPoints[wolfIndex] += 6
         nonWolves.forEach(p => { newPoints[p.index] -= 2 })
       } else {
-        // Lone wolf loses — pays 2 to each of 3 opponents
         newPoints[wolfIndex] -= 6
         nonWolves.forEach(p => { newPoints[p.index] += 2 })
       }
     } else {
       if (wolfWon) {
-        // Wolf team wins — wolf + partner each get 1 from each opponent
         newPoints[wolfIndex] += opponents.length
         newPoints[partner] += opponents.length
         opponents.forEach(p => { newPoints[p.index] -= 1 })
       } else {
-        // Opponents win — each opponent gets 1 from wolf and partner
         opponents.forEach(p => { newPoints[p.index] += 2 })
         newPoints[wolfIndex] -= opponents.length
         newPoints[partner] -= opponents.length
       }
     }
 
-    setHistory(prev => [...prev, {
-      hole: currentHole,
-      wolf: players[wolfIndex],
+    const newHistory = [...history, {
+      hole: currentHole, wolf: players[wolfIndex],
       partner: partner !== null ? players[partner] : null,
-      loneWolf,
-      wolfWon
-    }])
-
+      loneWolf, wolfWon
+    }]
+    setHistory(newHistory)
     setPoints(newPoints)
 
     if (currentHole < 18) {
@@ -734,6 +726,19 @@ function WolfGame() {
     } else {
       setPhase('done')
     }
+  }
+
+  function resetGame() {
+    clearGame('game_wolf')
+    setSetup(true)
+    setCurrentHole(1)
+    setWolfIndex(0)
+    setPoints([0,0,0,0])
+    setPhase('picking')
+    setPartner(null)
+    setLoneWolf(false)
+    setHistory([])
+    setPlayers(['Player 1', 'Player 2', 'Player 3', 'Player 4'])
   }
 
   if (setup) {
@@ -786,9 +791,7 @@ function WolfGame() {
             borderRadius: 10, padding: '12px 16px', marginBottom: 8,
             display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontSize: 20 }}>
-                {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '4️⃣'}
-              </div>
+              <div style={{ fontSize: 20 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '4️⃣'}</div>
               <div style={{ fontSize: 15, fontWeight: 600,
                 color: i === 0 ? '#fff' : 'var(--tx)' }}>{p.name}</div>
             </div>
@@ -798,16 +801,7 @@ function WolfGame() {
             </div>
           </div>
         ))}
-        <button onClick={() => {
-          setSetup(true)
-          setCurrentHole(1)
-          setWolfIndex(0)
-          setPoints([0,0,0,0])
-          setPhase('picking')
-          setPartner(null)
-          setLoneWolf(false)
-          setHistory([])
-        }}
+        <button onClick={resetGame}
           style={{ width: '100%', background: 'var(--bg2)', color: 'var(--tx)',
             border: '1px solid var(--bd)', borderRadius: 10, padding: '10px',
             fontSize: 14, cursor: 'pointer', marginTop: 8 }}>
@@ -870,8 +864,7 @@ function WolfGame() {
               <button key={p.index} onClick={() => pickPartner(p.index)}
                 style={{ border: '1px solid var(--bd)', borderRadius: 10,
                   background: '#fff', padding: '12px 16px',
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  cursor: 'pointer' }}>
+                  display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
                 <div style={{ width: 36, height: 36, borderRadius: '50%',
                   background: 'var(--bg2)', display: 'flex', alignItems: 'center',
                   justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>
@@ -888,8 +881,14 @@ function WolfGame() {
           <button onClick={goLoneWolf}
             style={{ width: '100%', background: '#7f1d1d', color: '#fff',
               border: 'none', borderRadius: 10, padding: '12px',
-              fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+              fontSize: 14, fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}>
             🐺 Go Lone Wolf (1v3) — Double or nothing!
+          </button>
+          <button onClick={resetGame}
+            style={{ width: '100%', background: 'transparent',
+              border: '1px solid #fca5a5', borderRadius: 10, padding: '10px',
+              fontSize: 13, cursor: 'pointer', color: '#991b1b' }}>
+            🗑️ Abandon Game
           </button>
         </div>
       )}
@@ -911,7 +910,7 @@ function WolfGame() {
           <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 10 }}>
             Who won hole {currentHole}?
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <button onClick={() => scoreHole(true)}
               style={{ flex: 1, background: 'var(--g1)', color: '#fff',
                 border: 'none', borderRadius: 10, padding: '14px',
@@ -925,8 +924,14 @@ function WolfGame() {
               ⚔️ Opponents won!
             </button>
           </div>
+          <button onClick={resetGame}
+            style={{ width: '100%', background: 'transparent',
+              border: '1px solid #fca5a5', borderRadius: 10, padding: '10px',
+              fontSize: 13, cursor: 'pointer', color: '#991b1b', marginBottom: 12 }}>
+            🗑️ Abandon Game
+          </button>
           {history.length > 0 && (
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 4 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
                 textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>
                 History
@@ -954,7 +959,13 @@ function WolfGame() {
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 export default function Games() {
-  const [active, setActive] = useState(null)
+  const [active, setActive] = useState(() => {
+    // Restore active game on mount
+    if (loadGame('game_skins')?.setup === false) return 'skins'
+    if (loadGame('game_match')?.setup === false) return 'match'
+    if (loadGame('game_wolf')?.setup === false) return 'wolf'
+    return null
+  })
 
   if (active === 'skins') return (
     <div>
@@ -998,22 +1009,40 @@ export default function Games() {
         textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
         Choose a side game
       </div>
+
+      {/* Resume banner if game in progress */}
+      {(loadGame('game_skins')?.setup === false ||
+        loadGame('game_match')?.setup === false ||
+        loadGame('game_wolf')?.setup === false) && (
+        <div style={{ background: '#fef3c7', borderRadius: 12, padding: 12,
+          marginBottom: 12, fontSize: 13, color: '#92400e' }}>
+          🎮 You have a game in progress — tap it below to resume
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {gamesList.map(g => (
-          <button key={g.id} onClick={() => setActive(g.id)}
-            style={{ border: '1px solid var(--bd)', borderRadius: 12,
-              padding: '16px 14px', cursor: 'pointer', background: '#fff',
-              display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left' }}>
-            <div style={{ fontSize: 32 }}>{g.icon}</div>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--tx)',
-                marginBottom: 3 }}>{g.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--tx2)', lineHeight: 1.4 }}>
-                {g.desc}
+        {gamesList.map(g => {
+          const inProgress = loadGame(`game_${g.id}`)?.setup === false
+          return (
+            <button key={g.id} onClick={() => setActive(g.id)}
+              style={{ border: inProgress ? '2px solid var(--g3)' : '1px solid var(--bd)',
+                borderRadius: 12, padding: '16px 14px', cursor: 'pointer',
+                background: inProgress ? 'rgba(45,138,84,0.05)' : '#fff',
+                display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left' }}>
+              <div style={{ fontSize: 32 }}>{g.icon}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--tx)', marginBottom: 3 }}>
+                  {g.name}
+                  {inProgress && (
+                    <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--g2)',
+                      fontWeight: 600 }}>● IN PROGRESS</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--tx2)', lineHeight: 1.4 }}>{g.desc}</div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
