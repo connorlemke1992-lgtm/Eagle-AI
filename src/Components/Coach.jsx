@@ -48,7 +48,6 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin, scor
     return `Player is ${scoreDiff} over par through ${playedScores.length} holes — play safe, focus on bogey golf.`
   }
 
-  // Save messages to localStorage whenever they change
   useEffect(() => {
     try {
       localStorage.setItem('coach_messages', JSON.stringify(messages))
@@ -159,6 +158,9 @@ Shot shape: ${shotShape}.
 Give direct, specific, actionable golf advice. Factor in all conditions automatically without being asked. Be conversational but expert. No markdown, no asterisks, plain text only.`
 
     try {
+      // Cap at last 20 messages to avoid context window issues
+      const apiMessages = updatedMessages.slice(-20)
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,7 +168,7 @@ Give direct, specific, actionable golf advice. Factor in all conditions automati
           model: 'claude-sonnet-4-5',
           max_tokens: 300,
           system: systemContext,
-          messages: updatedMessages
+          messages: apiMessages
         })
       })
       const data = await res.json()
@@ -191,7 +193,6 @@ Give direct, specific, actionable golf advice. Factor in all conditions automati
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 130px)' }}>
 
-      {/* Context banner */}
       {(courseName || distanceToPin || h || weather) && (
         <div style={{ background: 'var(--g1)', padding: '8px 16px',
           display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -214,7 +215,6 @@ Give direct, specific, actionable golf advice. Factor in all conditions automati
         </div>
       )}
 
-      {/* Clear button when no context banner */}
       {!(courseName || distanceToPin || h || weather) && messages.length > 1 && (
         <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'flex-end' }}>
           <button onClick={clearMessages}
@@ -226,7 +226,6 @@ Give direct, specific, actionable golf advice. Factor in all conditions automati
         </div>
       )}
 
-      {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 16,
         display: 'flex', flexDirection: 'column', gap: 12 }}>
         {messages.map((msg, i) => (
@@ -270,7 +269,6 @@ Give direct, specific, actionable golf advice. Factor in all conditions automati
         <div ref={bottomRef} />
       </div>
 
-      {/* Voice transcript */}
       {(isListening || transcript) && (
         <div style={{ margin: '0 16px 8px', background: 'var(--g1)',
           borderRadius: 12, padding: '10px 14px' }}>
@@ -299,7 +297,6 @@ Give direct, specific, actionable golf advice. Factor in all conditions automati
         </div>
       )}
 
-      {/* Input area */}
       <div style={{ padding: '8px 16px 16px', borderTop: '1px solid var(--bd)',
         background: '#fff', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10,
