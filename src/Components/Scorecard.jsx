@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const defaultHoles = [
   {par:4,yards:412,hcp:7},{par:5,yards:531,hcp:3},{par:3,yards:178,hcp:15},
@@ -110,7 +110,14 @@ export default function Scorecard({ scores, setScores, currentHole,
   const [courseRating, setCourseRating] = useState('')
   const [slopeRating, setSlopeRating] = useState('')
 
-  // Support both local courses and GolfAPI courses
+  // Reset holeStats when round is cleared
+  useEffect(() => {
+    const allNull = scores.every(s => s === null)
+    if (allNull) {
+      setHoleStats({})
+    }
+  }, [scores])
+
   const isGolfAPI = selectedCourse?.course?.isGolfAPI
   const chosenTee = selectedCourse?.course?.chosenTee
 
@@ -118,7 +125,6 @@ export default function Scorecard({ scores, setScores, currentHole,
                     selectedCourse?.course?.tees?.male?.[0]?.holes ||
                     selectedCourse?.course?.tees?.female?.[0]?.holes || null
 
-  // Build unified holes array
   const holes = realHoles
     ? realHoles.map((h, i) => ({
         par: h.par || null,
@@ -137,7 +143,6 @@ export default function Scorecard({ scores, setScores, currentHole,
   const played = scores.filter(s => s !== null)
   const totalStrokes = scores.reduce((a, b) => b !== null ? a + b : a, 0)
 
-  // Only calculate par diff for holes that have par data
   const holesWithPar = holes.filter(hole => hole.par)
   const totalPar = holesWithPar.length > 0
     ? holes.slice(0, played.length).reduce((a, hole) => hole.par ? a + hole.par : a, 0)
@@ -164,7 +169,6 @@ export default function Scorecard({ scores, setScores, currentHole,
 
   const totalPutts = front9Putts + back9Putts
 
-  // Pre-fill course rating/slope from GolfAPI if available
   const defaultRating = selectedCourse?.course?.courseRating ||
                         chosenTee?.courseRatingMen || ''
   const defaultSlope = selectedCourse?.course?.slope ||
@@ -194,7 +198,6 @@ export default function Scorecard({ scores, setScores, currentHole,
   function getPutts() { return holeStats[currentHole]?.putts || null }
   function setPutts(val) { updateHoleStat('putts', val) }
 
-  // Build score options based on par (use 4 as default if no par data)
   const par = h?.par || 4
   const allOptions = [{ label: 'HIO', val: 1 }]
   if (par >= 4) allOptions.push({ label: par === 5 ? 'Albatross' : 'Eagle', val: 2 })
@@ -232,7 +235,6 @@ export default function Scorecard({ scores, setScores, currentHole,
         </div>
       )}
 
-      {/* Summary stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)',
         gap: 8, marginBottom: 16 }}>
         {[
@@ -256,7 +258,6 @@ export default function Scorecard({ scores, setScores, currentHole,
         ))}
       </div>
 
-      {/* Score entry */}
       <div style={{ background: '#fff', border: '1px solid var(--bd)',
         borderRadius: 12, padding: 16, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center',
@@ -295,7 +296,6 @@ export default function Scorecard({ scores, setScores, currentHole,
           })}
         </div>
 
-        {/* Custom score */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
           <div style={{ fontSize: 11, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
             Other:
@@ -312,7 +312,6 @@ export default function Scorecard({ scores, setScores, currentHole,
               fontSize: 13, fontWeight: 600 }}>Set</button>
         </div>
 
-        {/* Putts */}
         <div style={{ background: 'var(--bg2)', borderRadius: 10,
           padding: '10px 12px', marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: 'var(--tx2)', textTransform: 'uppercase',
@@ -332,7 +331,6 @@ export default function Scorecard({ scores, setScores, currentHole,
           </div>
         </div>
 
-        {/* Hole stats */}
         <div style={{ background: 'var(--bg2)', borderRadius: 10,
           padding: '10px 12px', marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: 'var(--tx2)', textTransform: 'uppercase',
@@ -419,7 +417,6 @@ export default function Scorecard({ scores, setScores, currentHole,
           </div>
         </div>
 
-        {/* Prev/Next */}
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setCurrentHole(Math.max(0, currentHole - 1))}
             style={{ flex: 1, border: '1px solid var(--bd)', borderRadius: 8,
@@ -434,7 +431,6 @@ export default function Scorecard({ scores, setScores, currentHole,
         </div>
       </div>
 
-      {/* Clear Round */}
       {played.length > 0 && !showFinishConfirm && !showClearConfirm && (
         <button onClick={() => setShowClearConfirm(true)}
           style={{ width: '100%', background: '#fff',
@@ -476,7 +472,6 @@ export default function Scorecard({ scores, setScores, currentHole,
         </div>
       )}
 
-      {/* Finish Round */}
       {played.length >= 9 && !showFinishConfirm && !showClearConfirm && (
         <button onClick={() => setShowFinishConfirm(true)}
           style={{ width: '100%', background: '#4ade80', border: 'none',
@@ -564,7 +559,6 @@ export default function Scorecard({ scores, setScores, currentHole,
         </div>
       )}
 
-      {/* Scorecard table */}
       <div style={{ background: '#fff', border: '1px solid var(--bd)',
         borderRadius: 12, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -610,7 +604,6 @@ export default function Scorecard({ scores, setScores, currentHole,
               )
             })}
 
-            {/* OUT row */}
             <tr style={{ background: 'rgba(45,138,84,0.08)',
               borderTop: '2px solid var(--g3)', borderBottom: '2px solid var(--g3)' }}>
               <td colSpan={2} style={{ padding: '6px 4px', textAlign: 'center',
@@ -670,7 +663,6 @@ export default function Scorecard({ scores, setScores, currentHole,
               )
             })}
 
-            {/* IN row */}
             <tr style={{ background: 'rgba(45,138,84,0.08)',
               borderTop: '2px solid var(--g3)', borderBottom: '2px solid var(--g3)' }}>
               <td colSpan={2} style={{ padding: '6px 4px', textAlign: 'center',
@@ -696,7 +688,6 @@ export default function Scorecard({ scores, setScores, currentHole,
               </td>
             </tr>
 
-            {/* TOTAL row */}
             <tr style={{ background: 'var(--g1)' }}>
               <td colSpan={2} style={{ padding: '8px 4px', textAlign: 'center',
                 fontWeight: 700, fontSize: 12, color: '#fff' }}>TOTAL</td>
