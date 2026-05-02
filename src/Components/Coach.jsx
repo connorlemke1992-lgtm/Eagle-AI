@@ -5,13 +5,18 @@ function degreesToCardinal(deg) {
   return dirs[Math.round(deg / 45) % 8]
 }
 
+const INITIAL_MESSAGE = {
+  role: 'assistant',
+  content: `Hey! I'm Eagle, your AI golf coach. Ask me anything — club selection, course strategy, swing tips, mental game, rules questions. I'm here to help you play your best golf.`
+}
+
 export default function Coach({ currentHole, selectedCourse, distanceToPin, scores = [] }) {
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: `Hey! I'm Eagle, your AI golf coach. Ask me anything — club selection, course strategy, swing tips, mental game, rules questions. I'm here to help you play your best golf.`
-    }
-  ])
+  const [messages, setMessages] = useState(() => {
+    try {
+      const stored = localStorage.getItem('coach_messages')
+      return stored ? JSON.parse(stored) : [INITIAL_MESSAGE]
+    } catch { return [INITIAL_MESSAGE] }
+  })
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [isListening, setIsListening] = useState(false)
@@ -28,7 +33,6 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin, scor
   const h = holes[currentHole]
   const courseName = selectedCourse?.course?.club_name || null
 
-  // Score context
   const playedScores = scores.filter(s => s !== null)
   const totalStrokes = playedScores.reduce((a, b) => a + b, 0)
   const totalPar = holes.slice(0, playedScores.length).reduce((a, h) => a + (h?.par || 4), 0)
@@ -43,6 +47,13 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin, scor
     if (scoreDiff <= 5) return `Player is ${scoreDiff} over par through ${playedScores.length} holes — play conservative, minimize mistakes.`
     return `Player is ${scoreDiff} over par through ${playedScores.length} holes — play safe, focus on bogey golf.`
   }
+
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('coach_messages', JSON.stringify(messages))
+    } catch {}
+  }, [messages])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -72,6 +83,11 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin, scor
       } catch {}
     }, null, { enableHighAccuracy: true, timeout: 12000 })
   }, [])
+
+  function clearMessages() {
+    setMessages([INITIAL_MESSAGE])
+    localStorage.removeItem('coach_messages')
+  }
 
   function toggleVoice() {
     if (isListening) stopListening()
@@ -180,7 +196,7 @@ Give direct, specific, actionable golf advice. Factor in all conditions automati
         <div style={{ background: 'var(--g1)', padding: '8px 16px',
           display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: 14 }}>📍</span>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', flex: 1 }}>
             {courseName && `${courseName} · `}
             {`Hole ${currentHole + 1}`}
             {h?.par && ` · Par ${h.par}`}
@@ -189,6 +205,24 @@ Give direct, specific, actionable golf advice. Factor in all conditions automati
             {weather && ` · 💨 ${weather.windSpeed}mph ${weather.windDir} · ${weather.temp}°F`}
             {scoreDiff !== null && ` · ${scoreDiff > 0 ? '+' : ''}${scoreDiff} thru ${playedScores.length}`}
           </div>
+          <button onClick={clearMessages}
+            style={{ background: 'rgba(255,255,255,0.15)', border: 'none',
+              borderRadius: 8, padding: '4px 10px', cursor: 'pointer',
+              fontSize: 11, color: 'rgba(255,255,255,0.7)', flexShrink: 0 }}>
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* Clear button when no context banner */}
+      {!(courseName || distanceToPin || h || weather) && messages.length > 1 && (
+        <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={clearMessages}
+            style={{ background: 'var(--bg2)', border: '1px solid var(--bd)',
+              borderRadius: 8, padding: '4px 12px', cursor: 'pointer',
+              fontSize: 11, color: 'var(--tx2)' }}>
+            Clear chat
+          </button>
         </div>
       )}
 
