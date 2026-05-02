@@ -403,6 +403,7 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const pinMarkerRef = useRef(null)
+  const teeMarkerRef = useRef(null)
   const playerMarkerRef = useRef(null)
   const autoRefreshRef = useRef(null)
 
@@ -454,7 +455,7 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
           position: playerPos, map: mapInstanceRef.current,
           icon: {
             path: window.google.maps.SymbolPath.CIRCLE,
-            scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
+            scale: 10, fillColor: '#f59e0b', fillOpacity: 1,
             strokeColor: '#fff', strokeWeight: 2,
           }, title: 'You'
         })
@@ -497,8 +498,6 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
 
   function getHoleCoords(holeIndex) {
     const coordinates = selectedCourse?.course?.coordinates || []
-
-    // Use real GPS green center if available
     if (coordinates.length > 0) {
       const holeCoords = coordinates.filter(c => c.hole === holeIndex + 1)
       const green = holeCoords.find(c => c.poi === 1 && c.sideFW === 2) ||
@@ -511,8 +510,6 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
         }
       }
     }
-
-    // Fall back to estimated position
     const lat = selectedCourse?.course?.location?.latitude
     const lng = selectedCourse?.course?.location?.longitude
     if (lat && lng) {
@@ -540,11 +537,13 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
     const c = getHoleCoords(currentHole)
     const map = new window.google.maps.Map(mapRef.current, {
       center: c, zoom: 17, mapTypeId: 'satellite', tilt: 0,
-      zoomControl: false, mapTypeControl: false,
+      zoomControl: true, mapTypeControl: false,
       streetViewControl: false, fullscreenControl: false,
       gestureHandling: 'greedy',
     })
     mapInstanceRef.current = map
+
+    // Green pin — draggable
     pinMarkerRef.current = new window.google.maps.Marker({
       position: c, map, draggable: true,
       icon: {
@@ -557,12 +556,30 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
     pinMarkerRef.current.addListener('dragend', (e) => {
       setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
     })
+
+    // Tee box marker
+    const coordinates = selectedCourse?.course?.coordinates || []
+    const teeCoords = coordinates.filter(coord => coord.hole === currentHole + 1)
+    const tee = teeCoords.find(coord => coord.poi === 12)
+    if (tee) {
+      teeMarkerRef.current = new window.google.maps.Marker({
+        position: { lat: parseFloat(tee.latitude), lng: parseFloat(tee.longitude) },
+        map,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 8, fillColor: '#60a5fa', fillOpacity: 1,
+          strokeColor: '#fff', strokeWeight: 2,
+        }, title: 'Tee'
+      })
+    }
+
+    // Player marker
     if (playerPos) {
       playerMarkerRef.current = new window.google.maps.Marker({
         position: playerPos, map,
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
+          scale: 10, fillColor: '#f59e0b', fillOpacity: 1,
           strokeColor: '#fff', strokeWeight: 2,
         }, title: 'You'
       })
@@ -575,6 +592,16 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
     if (pinMarkerRef.current) {
       pinMarkerRef.current.setPosition(c)
       setPinPos({ lat: c.lat, lng: c.lng })
+    }
+    // Update tee marker
+    const coordinates = selectedCourse?.course?.coordinates || []
+    const teeCoords = coordinates.filter(coord => coord.hole === currentHole + 1)
+    const tee = teeCoords.find(coord => coord.poi === 12)
+    if (tee && teeMarkerRef.current) {
+      teeMarkerRef.current.setPosition({
+        lat: parseFloat(tee.latitude),
+        lng: parseFloat(tee.longitude)
+      })
     }
   }
 
@@ -858,13 +885,13 @@ RULES:
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)',
             textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>
-            Hole Map · Drag 🟢 to move pin
+            Hole Map · 🟢 Pin · 🔵 Tee · 🟡 You · Drag 🟢 to move pin
           </div>
           <div ref={(el) => {
             mapRef.current = el
             if (el && !mapInstanceRef.current) setMapLoaded(true)
           }}
-            style={{ width: '100%', height: 200, borderRadius: 12,
+            style={{ width: '100%', height: 350, borderRadius: 12,
               overflow: 'hidden', border: '1px solid var(--bd)' }} />
         </div>
       )}
