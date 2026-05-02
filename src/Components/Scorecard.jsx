@@ -430,7 +430,8 @@ export default function Scorecard({ scores, setScores, currentHole,
         </div>
       </div>
 
-      {played.length > 0 && !showFinishConfirm && !showClearConfirm && (
+      {/* Clear Round — shows if scores OR hole stats exist */}
+      {(played.length > 0 || Object.keys(holeStats).length > 0) && !showFinishConfirm && !showClearConfirm && (
         <button onClick={() => setShowClearConfirm(true)}
           style={{ width: '100%', background: '#fff',
             border: '1px solid #fca5a5', borderRadius: 12,
