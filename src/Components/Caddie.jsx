@@ -54,60 +54,53 @@ function loadBag() {
   return defaultBag
 }
 
+function loadShotShape() {
+  return localStorage.getItem('shot_shape') || 'fade'
+}
+
+function getScoreContext(scores, holes) {
+  const played = scores.filter(s => s !== null)
+  if (played.length === 0) return null
+  const totalStrokes = played.reduce((a, b) => a + b, 0)
+  const totalPar = holes.slice(0, played.length).reduce((a, h) => a + (h?.par || 4), 0)
+  const diff = totalStrokes - totalPar
+  if (diff <= -2) return 'Player is playing great — 2+ under par. Play aggressive.'
+  if (diff === -1) return 'Player is 1 under par. Stay aggressive but smart.'
+  if (diff === 0) return 'Player is even par. Play your game, take calculated risks.'
+  if (diff <= 2) return 'Player is 1-2 over par. Play smart, avoid bogey makers.'
+  if (diff <= 5) return 'Player is 3-5 over par. Play conservative, minimize mistakes.'
+  return 'Player is struggling. Play safe, focus on bogey golf.'
+}
+
 function drawPuttLine(canvas, img, puttData) {
   const ctx = canvas.getContext('2d')
   canvas.width = img.naturalWidth
   canvas.height = img.naturalHeight
   ctx.drawImage(img, 0, 0)
-
   const w = canvas.width
   const h = canvas.height
-
   const breakDir = puttData.breakDirection || 'straight'
   const breakAmount = puttData.breakAmount || 'slight'
   const startX = puttData.startX || 0.5
   const startY = puttData.startY || 0.85
   const endX = puttData.endX || 0.5
   const endY = puttData.endY || 0.15
-
   const sx = startX * w
   const sy = startY * h
   const ex = endX * w
   const ey = endY * h
-
-  // More dramatic break offsets
   const breakOffset = breakAmount === 'significant' ? 0.35
     : breakAmount === 'moderate' ? 0.25 : 0.15
-
   const midX = (sx + ex) / 2
   const midY = (sy + ey) / 2
-
-  let cpx = midX
-  let cpy = midY
-
-  if (breakDir === 'left') {
-    cpx = midX - (w * breakOffset)
-    cpy = midY
-  } else if (breakDir === 'right') {
-    cpx = midX + (w * breakOffset)
-    cpy = midY
-  } else if (breakDir === 'left-to-right') {
-    cpx = midX + (w * breakOffset)
-    cpy = midY + (h * 0.1)
-  } else if (breakDir === 'right-to-left') {
-    cpx = midX - (w * breakOffset)
-    cpy = midY + (h * 0.1)
-  } else {
-    // straight — tiny curve so it doesn't look flat
-    cpx = midX + (w * 0.02)
-    cpy = midY
-  }
-
-  // Glow effect
+  let cpx = midX, cpy = midY
+  if (breakDir === 'left') { cpx = midX - (w * breakOffset); cpy = midY }
+  else if (breakDir === 'right') { cpx = midX + (w * breakOffset); cpy = midY }
+  else if (breakDir === 'left-to-right') { cpx = midX + (w * breakOffset); cpy = midY + (h * 0.1) }
+  else if (breakDir === 'right-to-left') { cpx = midX - (w * breakOffset); cpy = midY + (h * 0.1) }
+  else { cpx = midX + (w * 0.02); cpy = midY }
   ctx.shadowColor = '#4ade80'
   ctx.shadowBlur = 20
-
-  // Draw curved putt line
   ctx.beginPath()
   ctx.moveTo(sx, sy)
   ctx.quadraticCurveTo(cpx, cpy, ex, ey)
@@ -116,27 +109,17 @@ function drawPuttLine(canvas, img, puttData) {
   ctx.lineCap = 'round'
   ctx.setLineDash([])
   ctx.stroke()
-
-  // Arrow at end
   const angle = Math.atan2(ey - cpy, ex - cpx)
   const arrowSize = Math.max(w * 0.025, 12)
   ctx.shadowBlur = 0
   ctx.beginPath()
   ctx.moveTo(ex, ey)
-  ctx.lineTo(
-    ex - arrowSize * Math.cos(angle - Math.PI / 6),
-    ey - arrowSize * Math.sin(angle - Math.PI / 6)
-  )
+  ctx.lineTo(ex - arrowSize * Math.cos(angle - Math.PI/6), ey - arrowSize * Math.sin(angle - Math.PI/6))
   ctx.moveTo(ex, ey)
-  ctx.lineTo(
-    ex - arrowSize * Math.cos(angle + Math.PI / 6),
-    ey - arrowSize * Math.sin(angle + Math.PI / 6)
-  )
+  ctx.lineTo(ex - arrowSize * Math.cos(angle + Math.PI/6), ey - arrowSize * Math.sin(angle + Math.PI/6))
   ctx.strokeStyle = '#4ade80'
   ctx.lineWidth = Math.max(w * 0.006, 3)
   ctx.stroke()
-
-  // Ball position dot
   ctx.shadowColor = '#fff'
   ctx.shadowBlur = 10
   ctx.beginPath()
@@ -144,8 +127,6 @@ function drawPuttLine(canvas, img, puttData) {
   ctx.fillStyle = '#fff'
   ctx.fill()
   ctx.shadowBlur = 0
-
-  // Aim point label
   ctx.font = `bold ${Math.max(w * 0.025, 14)}px Inter, sans-serif`
   ctx.fillStyle = '#4ade80'
   ctx.shadowColor = '#000'
@@ -171,11 +152,8 @@ function EagleVision({ onClose, bag, weather, distanceToPin,
   useEffect(() => {
     if (puttData && photo && canvasRef.current && imgRef.current && showLine) {
       const img = imgRef.current
-      if (img.complete) {
-        drawPuttLine(canvasRef.current, img, puttData)
-      } else {
-        img.onload = () => drawPuttLine(canvasRef.current, img, puttData)
-      }
+      if (img.complete) drawPuttLine(canvasRef.current, img, puttData)
+      else img.onload = () => drawPuttLine(canvasRef.current, img, puttData)
     }
   }, [puttData, showLine])
 
@@ -187,10 +165,7 @@ function EagleVision({ onClose, bag, weather, distanceToPin,
     setAnalysis('')
     setShowLine(false)
     const reader = new FileReader()
-    reader.onload = () => {
-      const base64 = reader.result.split(',')[1]
-      setPhotoData(base64)
-    }
+    reader.onload = () => setPhotoData(reader.result.split(',')[1])
     reader.readAsDataURL(file)
   }
 
@@ -202,26 +177,21 @@ function EagleVision({ onClose, bag, weather, distanceToPin,
     setShowLine(false)
 
     const liePrompt = `You are Eagle, an elite PGA-level golf caddie analyzing a photo of a golfer's ball and lie.
-
 Analyze this image and provide:
-1. Type of lie (fairway, rough, tight, fluffy, buried, uphill, downhill, sidehill, divot, sand, etc.)
-2. Recommended club for this lie
-3. Key shot adjustment needed (ball position, swing thought)
-4. One specific tip for this exact lie
-
-Context:
-- Hole ${currentHole + 1}${courseName ? ` at ${courseName}` : ''} — Par ${holePar}, ${holeYards} yards
-${distanceToPin ? `- Distance to pin: ${distanceToPin} yards` : ''}
-${weather ? `- Wind: ${weather.windSpeed} mph from ${weather.windDir}` : ''}
-- Player bag: ${JSON.stringify(bag)}
-
+1. Type of lie
+2. Recommended club
+3. Key shot adjustment
+4. One specific tip
+Context: Hole ${currentHole + 1}${courseName ? ` at ${courseName}` : ''} — Par ${holePar}, ${holeYards} yards
+${distanceToPin ? `Distance to pin: ${distanceToPin} yards` : ''}
+${weather ? `Wind: ${weather.windSpeed} mph from ${weather.windDir}` : ''}
+Player bag: ${JSON.stringify(bag)}
 Keep response under 80 words. Plain text only, no markdown.`
 
     const puttPrompt = `You are Eagle, an elite PGA-level golf caddie analyzing a photo of a putt.
-
-Analyze this image carefully and respond with ONLY a JSON object in this exact format, nothing else:
+Respond with ONLY a JSON object:
 {
-  "analysis": "2-3 sentence putting advice here",
+  "analysis": "2-3 sentence putting advice",
   "breakDirection": "left" or "right" or "straight" or "left-to-right" or "right-to-left",
   "breakAmount": "slight" or "moderate" or "significant",
   "startX": 0.5,
@@ -229,12 +199,7 @@ Analyze this image carefully and respond with ONLY a JSON object in this exact f
   "endX": 0.5,
   "endY": 0.15,
   "aimPoint": "description of where to aim"
-}
-
-For startX/startY estimate where the ball is in the image (0-1 scale, 0,0 = top left).
-For endX/endY estimate where the hole is in the image (0-1 scale).
-Adjust endX based on break — if breaking left, endX should be slightly left of hole center.
-Plain text analysis only, no markdown in the analysis field.`
+}`
 
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -251,41 +216,25 @@ Plain text analysis only, no markdown in the analysis field.`
           messages: [{
             role: 'user',
             content: [
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/jpeg',
-                  data: photoData,
-                }
-              },
-              {
-                type: 'text',
-                text: mode === 'lie' ? liePrompt : puttPrompt
-              }
+              { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: photoData } },
+              { type: 'text', text: mode === 'lie' ? liePrompt : puttPrompt }
             ]
           }]
         })
       })
       const data = await res.json()
       const text = data.content?.[0]?.text || ''
-
       if (mode === 'putt') {
         try {
-          const clean = text.replace(/```json|```/g, '').trim()
-          const parsed = JSON.parse(clean)
+          const parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
           setAnalysis(parsed.analysis || text)
           setPuttData(parsed)
           setShowLine(true)
-        } catch {
-          setAnalysis(text)
-        }
+        } catch { setAnalysis(text) }
       } else {
         setAnalysis(text)
       }
-    } catch {
-      setAnalysis('Could not analyze photo. Please try again.')
-    }
+    } catch { setAnalysis('Could not analyze photo. Please try again.') }
     setLoading(false)
   }
 
@@ -295,14 +244,12 @@ Plain text analysis only, no markdown in the analysis field.`
         style={{ border: '1px solid var(--bd)', borderRadius: 8,
           background: '#fff', padding: '6px 14px', cursor: 'pointer',
           fontSize: 13, marginBottom: 16 }}>← Back</button>
-
       <div style={{ fontFamily: 'Bebas Neue', fontSize: 26, marginBottom: 4 }}>
         📸 Eagle Vision
       </div>
       <div style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 20 }}>
         AI-powered shot and putt analysis
       </div>
-
       {!mode && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <button onClick={() => setMode('lie')}
@@ -311,65 +258,52 @@ Plain text analysis only, no markdown in the analysis field.`
               display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ fontSize: 40 }}>⛳</div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff',
-                marginBottom: 4 }}>Analyze My Lie</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)',
-                lineHeight: 1.5 }}>
-                Take a photo of your ball position. Eagle will read your lie
-                and recommend the right shot.
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+                Analyze My Lie
+              </div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
+                Take a photo of your ball position. Eagle will read your lie and recommend the right shot.
               </div>
             </div>
           </button>
-
           <button onClick={() => setMode('putt')}
             style={{ background: 'var(--g1)', border: 'none', borderRadius: 14,
               padding: '20px 16px', cursor: 'pointer', textAlign: 'left',
               display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ fontSize: 40 }}>🎯</div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff',
-                marginBottom: 4 }}>Read My Putt</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)',
-                lineHeight: 1.5 }}>
-                Take a photo showing your ball and the hole. Eagle reads the
-                break and draws the putt line on your photo.
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+                Read My Putt
+              </div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
+                Take a photo showing your ball and the hole. Eagle reads the break and draws the putt line.
               </div>
             </div>
           </button>
         </div>
       )}
-
       {mode && (
         <div>
-          <div style={{ background: 'var(--g1)', borderRadius: 12,
-            padding: 14, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff',
-              marginBottom: 6 }}>
+          <div style={{ background: 'var(--g1)', borderRadius: 12, padding: 14, marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 6 }}>
               {mode === 'lie' ? '⛳ Lie Analysis' : '🎯 Putt Line Reader'}
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)',
-              lineHeight: 1.5 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
               {mode === 'lie'
                 ? 'Take a photo showing your ball and the ground around it clearly.'
-                : 'Get low and take a photo showing your ball AND the hole in the same frame. Eagle will draw the putt line on your photo.'}
+                : 'Get low and take a photo showing your ball AND the hole in the same frame.'}
             </div>
           </div>
-
           {photo && (
             <div style={{ marginBottom: 16, position: 'relative' }}>
-              <img ref={imgRef} src={photo} alt="Golf"
-                style={{ display: 'none' }} crossOrigin="anonymous" />
-
+              <img ref={imgRef} src={photo} alt="Golf" style={{ display: 'none' }} crossOrigin="anonymous" />
               {showLine && puttData ? (
                 <div>
                   <canvas ref={canvasRef}
-                    style={{ width: '100%', borderRadius: 12,
-                      border: '2px solid #4ade80', display: 'block' }} />
-                  <div style={{ background: 'var(--g1)', borderRadius: 8,
-                    padding: '8px 12px', marginTop: 8,
+                    style={{ width: '100%', borderRadius: 12, border: '2px solid #4ade80', display: 'block' }} />
+                  <div style={{ background: 'var(--g1)', borderRadius: 8, padding: '8px 12px', marginTop: 8,
                     display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 12, height: 3, background: '#4ade80',
-                      borderRadius: 2 }} />
+                    <div style={{ width: 12, height: 3, background: '#4ade80', borderRadius: 2 }} />
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
                       {puttData.breakDirection === 'straight'
                         ? 'Straight putt — aim at center of hole'
@@ -380,16 +314,12 @@ Plain text analysis only, no markdown in the analysis field.`
               ) : (
                 <img src={photo} alt="Golf shot"
                   style={{ width: '100%', borderRadius: 12, maxHeight: 300,
-                    objectFit: 'cover', border: '1px solid var(--bd)',
-                    display: 'block' }} />
+                    objectFit: 'cover', border: '1px solid var(--bd)', display: 'block' }} />
               )}
             </div>
           )}
-
-          <input ref={fileRef} type="file" accept="image/*"
-            capture="environment" onChange={handlePhoto}
-            style={{ display: 'none' }} />
-
+          <input ref={fileRef} type="file" accept="image/*" capture="environment"
+            onChange={handlePhoto} style={{ display: 'none' }} />
           <button onClick={() => fileRef.current?.click()}
             style={{ width: '100%', background: photo ? '#fff' : 'var(--g1)',
               border: photo ? '1px solid var(--bd)' : 'none',
@@ -398,43 +328,33 @@ Plain text analysis only, no markdown in the analysis field.`
               color: photo ? 'var(--tx)' : '#fff' }}>
             {photo ? '📸 Retake Photo' : '📸 Take Photo'}
           </button>
-
           {photo && !loading && !analysis && (
             <button onClick={analyzePhoto}
               style={{ width: '100%', background: '#4ade80', border: 'none',
                 borderRadius: 12, padding: '14px', cursor: 'pointer',
-                fontWeight: 700, fontSize: 15, color: '#1a3a2a',
-                marginBottom: 12 }}>
+                fontWeight: 700, fontSize: 15, color: '#1a3a2a', marginBottom: 12 }}>
               {mode === 'putt' ? '🎯 Read Putt & Draw Line' : '🎯 Analyze with Eagle AI'}
             </button>
           )}
-
           {loading && (
             <div style={{ background: 'var(--g1)', borderRadius: 12,
               padding: 16, textAlign: 'center', marginBottom: 12 }}>
               <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>
-                {mode === 'putt'
-                  ? '🔍 Eagle is reading the break and drawing your putt line...'
-                  : '🔍 Eagle is analyzing your lie...'}
+                {mode === 'putt' ? '🔍 Eagle is reading the break...' : '🔍 Eagle is analyzing your lie...'}
               </div>
             </div>
           )}
-
           {analysis && (
-            <div style={{ background: 'var(--g1)', borderRadius: 12,
-              padding: 16, marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8,
-                marginBottom: 10 }}>
-                <div style={{ width: 30, height: 30, borderRadius: '50%',
-                  background: 'var(--g3)', display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', fontSize: 16 }}>🎯</div>
+            <div style={{ background: 'var(--g1)', borderRadius: 12, padding: 16, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--g3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🎯</div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)',
                   textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                   Eagle AI · {mode === 'lie' ? 'Lie Analysis' : 'Putt Read'}
                 </div>
               </div>
-              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.9)',
-                lineHeight: 1.7 }}>
+              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.9)', lineHeight: 1.7 }}>
                 {analysis}
               </div>
               {puttData?.aimPoint && (
@@ -446,34 +366,17 @@ Plain text analysis only, no markdown in the analysis field.`
                   </div>
                 </div>
               )}
-              <button onClick={() => {
-                setAnalysis('')
-                setPhoto(null)
-                setPhotoData(null)
-                setPuttData(null)
-                setShowLine(false)
-              }}
-                style={{ marginTop: 12, background: 'rgba(255,255,255,0.1)',
-                  border: 'none', borderRadius: 8, padding: '8px 16px',
-                  cursor: 'pointer', color: 'rgba(255,255,255,0.6)',
-                  fontSize: 12 }}>
+              <button onClick={() => { setAnalysis(''); setPhoto(null); setPhotoData(null); setPuttData(null); setShowLine(false) }}
+                style={{ marginTop: 12, background: 'rgba(255,255,255,0.1)', border: 'none',
+                  borderRadius: 8, padding: '8px 16px', cursor: 'pointer',
+                  color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>
                 📸 Analyze Another
               </button>
             </div>
           )}
-
-          <button onClick={() => {
-            setMode(null)
-            setPhoto(null)
-            setPhotoData(null)
-            setAnalysis('')
-            setPuttData(null)
-            setShowLine(false)
-          }}
-            style={{ width: '100%', background: 'var(--bg2)',
-              border: '1px solid var(--bd)', borderRadius: 10,
-              padding: '10px', cursor: 'pointer', fontSize: 13,
-              color: 'var(--tx2)' }}>
+          <button onClick={() => { setMode(null); setPhoto(null); setPhotoData(null); setAnalysis(''); setPuttData(null); setShowLine(false) }}
+            style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--bd)',
+              borderRadius: 10, padding: '10px', cursor: 'pointer', fontSize: 13, color: 'var(--tx2)' }}>
             ← Choose different mode
           </button>
         </div>
@@ -483,7 +386,7 @@ Plain text analysis only, no markdown in the analysis field.`
 }
 
 export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
-  playerPos, pinPos, setPinPos, distanceToPin }) {
+  playerPos, pinPos, setPinPos, distanceToPin, playerElevation, scores = [] }) {
 
   const [weather, setWeather] = useState(null)
   const [status, setStatus] = useState('idle')
@@ -508,11 +411,12 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
     setShowMyBag(false)
   }
 
-  const realHoles = selectedCourse?.course?.tees?.male?.[0]?.holes ||
+  const realHoles = selectedCourse?.course?.holes ||
+                    selectedCourse?.course?.tees?.male?.[0]?.holes ||
                     selectedCourse?.course?.tees?.female?.[0]?.holes || null
   const h = realHoles ? realHoles[currentHole] : fallbackHoles[currentHole]
   const courseName = selectedCourse?.course?.club_name || null
-  const holeYards = realHoles ? h?.yardage : h?.yards
+  const holeYards = h?.yardage || h?.yards
   const holePar = h?.par
 
   const ranked = Object.entries(bag)
@@ -616,23 +520,23 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
 
   function initMiniMap() {
     if (!mapRef.current) return
-    const coords = getHoleCoords(currentHole)
+    const c = getHoleCoords(currentHole)
     const map = new window.google.maps.Map(mapRef.current, {
-      center: coords, zoom: 17, mapTypeId: 'satellite', tilt: 0,
+      center: c, zoom: 17, mapTypeId: 'satellite', tilt: 0,
       zoomControl: false, mapTypeControl: false,
       streetViewControl: false, fullscreenControl: false,
       gestureHandling: 'none',
     })
     mapInstanceRef.current = map
     pinMarkerRef.current = new window.google.maps.Marker({
-      position: coords, map, draggable: true,
+      position: c, map, draggable: true,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
         scale: 10, fillColor: '#4ade80', fillOpacity: 1,
         strokeColor: '#fff', strokeWeight: 2,
       }, title: 'Pin'
     })
-    setPinPos({ lat: coords.lat, lng: coords.lng })
+    setPinPos({ lat: c.lat, lng: c.lng })
     pinMarkerRef.current.addListener('dragend', (e) => {
       setPinPos({ lat: e.latLng.lat(), lng: e.latLng.lng() })
     })
@@ -649,11 +553,11 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
   }
 
   function moveMiniMap() {
-    const coords = getHoleCoords(currentHole)
-    mapInstanceRef.current.panTo(coords)
+    const c = getHoleCoords(currentHole)
+    mapInstanceRef.current.panTo(c)
     if (pinMarkerRef.current) {
-      pinMarkerRef.current.setPosition(coords)
-      setPinPos({ lat: coords.lat, lng: coords.lng })
+      pinMarkerRef.current.setPosition(c)
+      setPinPos({ lat: c.lat, lng: c.lng })
     }
   }
 
@@ -696,6 +600,20 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
     setAdviceLoading(true)
     setAdvice('')
 
+    const shotShape = loadShotShape()
+    const altitudeFt = (playerElevation || 1600) * 3.281
+    const altitudeBonus = ((altitudeFt / 1000) * 2).toFixed(1)
+    const tempEffect = w.temp < 70 ? ((70 - w.temp) / 10 * -1).toFixed(1) : '+0'
+    const humidityEffect = w.humidity < 40 ? '+1' : w.humidity > 80 ? '-1' : '+0'
+    const greenFirmness = w.rain
+      ? 'soft — ball will stop quickly, less rollout'
+      : w.temp > 85
+        ? 'firm and fast — plan for significant rollout'
+        : 'normal conditions'
+
+    const holesArr = realHoles || fallbackHoles
+    const scoreContext = getScoreContext(scores, holesArr)
+
     const holeContext = courseName
       ? `Hole ${currentHole + 1} at ${courseName} — Par ${holePar}, ${holeYards} yards`
       : `Hole ${currentHole + 1} — Par ${holePar}, ${holeYards} yards`
@@ -704,18 +622,31 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
       ? `Player is ${distanceToPin} yards from the pin.`
       : `Full hole distance: ${holeYards} yards.`
 
+    // Wind effect on shot shape
+    const windShapeNote = shotShape === 'fade'
+      ? `Player hits a fade (left to right). Wind from ${w.windDir} will ${w.windDir.includes('W') ? 'amplify' : 'reduce'} the fade effect.`
+      : shotShape === 'draw'
+        ? `Player hits a draw (right to left). Wind from ${w.windDir} will ${w.windDir.includes('E') ? 'amplify' : 'reduce'} the draw effect.`
+        : `Player hits it straight.`
+
     const prompt = `You are Eagle, an elite AI golf caddie. Give exactly 2 sentences of caddie advice — no more.
 
 ${holeContext}
 ${distanceContext}
+${scoreContext ? scoreContext : ''}
+
+CONDITIONS:
 Wind: ${w.windSpeed} mph from ${w.windDir}, gusting ${w.windGusts} mph
-Temp: ${w.temp}°F
-Rain: ${w.rain ? 'Yes' : 'No'}
+Temperature: ${w.temp}°F (distance effect: ${tempEffect}%)
+Humidity: ${w.humidity}% (distance effect: ${humidityEffect}%)
+Altitude: ${Math.round(altitudeFt)}ft above sea level (distance bonus: +${altitudeBonus}%)
+Green firmness: ${greenFirmness}
+Shot shape: ${shotShape} — ${windShapeNote}
 Player bag: ${JSON.stringify(bag)}
 
-Rules:
-- Sentence 1: Name the exact club and adjusted yardage accounting for wind/temp
-- Sentence 2: One key shot tip
+RULES:
+- Sentence 1: Name the exact club and net adjusted yardage accounting for ALL conditions (wind + altitude + temp + humidity)
+- Sentence 2: One specific tip based on shot shape, wind direction, and green firmness
 - No markdown, no asterisks, plain text only
 - Maximum 2 sentences, no exceptions`
 
@@ -750,7 +681,9 @@ Rules:
             <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>
               Stock Yardages
             </div>
-            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>Edit your club distances</div>
+            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
+              Edit clubs · set shot shape
+            </div>
           </div>
         </div>
         <span style={{ fontSize: 16, color: 'var(--tx2)' }}>→</span>
@@ -765,12 +698,8 @@ Rules:
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 20 }}>📊</span>
           <div style={{ textAlign: 'left' }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>
-              My Handicap
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>
-              WHS handicap index tracker
-            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx)' }}>My Handicap</div>
+            <div style={{ fontSize: 11, color: 'var(--tx2)' }}>WHS handicap index tracker</div>
           </div>
         </div>
         <span style={{ fontSize: 16, color: 'var(--tx2)' }}>→</span>
@@ -785,9 +714,7 @@ Rules:
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 20 }}>📸</span>
           <div style={{ textAlign: 'left' }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: '#fff' }}>
-              Eagle Vision
-            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#fff' }}>Eagle Vision</div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
               AI lie & putt line analysis
             </div>
@@ -812,8 +739,7 @@ Rules:
           {status === 'ready' && (
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)',
               display: 'flex', alignItems: 'center', gap: 4 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%',
-                background: '#4ade80' }} />
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80' }} />
               Live
             </div>
           )}
@@ -855,11 +781,9 @@ Rules:
       )}
 
       {status === 'ready' && weather && (
-        <div style={{ background: 'var(--g1)', borderRadius: 12,
-          padding: 14, marginBottom: 12 }}>
+        <div style={{ background: 'var(--g1)', borderRadius: 12, padding: 14, marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%',
-              background: '#4ade80' }} />
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80' }} />
             <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11,
               textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 600 }}>
               Live conditions
@@ -883,8 +807,9 @@ Rules:
                 <div style={{ fontSize: 16 }}>{s.icon}</div>
                 <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)',
                   textTransform: 'uppercase', marginTop: 2 }}>{s.label}</div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#fff',
-                  marginTop: 2 }}>{s.val}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginTop: 2 }}>
+                  {s.val}
+                </div>
               </div>
             ))}
           </div>
@@ -892,8 +817,7 @@ Rules:
       )}
 
       {status === 'ready' && (
-        <div style={{ background: 'var(--g1)', borderRadius: 12,
-          padding: 14, marginBottom: 12 }}>
+        <div style={{ background: 'var(--g1)', borderRadius: 12, padding: 14, marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <div style={{ width: 28, height: 28, borderRadius: '50%',
               background: 'var(--g3)', display: 'flex', alignItems: 'center',
@@ -903,8 +827,9 @@ Rules:
               Eagle AI · {adviceLoading ? 'Thinking...' : 'Live advice'}
             </div>
             {adviceLoading && (
-              <div style={{ marginLeft: 'auto', fontSize: 10,
-                color: 'rgba(255,255,255,0.4)' }}>🔄</div>
+              <div style={{ marginLeft: 'auto', fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+                🔄
+              </div>
             )}
           </div>
           <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.9)', lineHeight: 1.6 }}>
@@ -978,8 +903,7 @@ Rules:
       )}
 
       {status === 'error' && (
-        <div style={{ background: '#fee2e2', borderRadius: 12,
-          padding: 16, marginBottom: 12 }}>
+        <div style={{ background: '#fee2e2', borderRadius: 12, padding: 16, marginBottom: 12 }}>
           <div style={{ fontWeight: 600, color: '#991b1b', marginBottom: 4 }}>
             Could not get location
           </div>
