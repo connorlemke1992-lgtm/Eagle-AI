@@ -542,7 +542,7 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
       center: c, zoom: 17, mapTypeId: 'satellite', tilt: 0,
       zoomControl: false, mapTypeControl: false,
       streetViewControl: false, fullscreenControl: false,
-      gestureHandling: 'none',
+      gestureHandling: 'greedy',
     })
     mapInstanceRef.current = map
     pinMarkerRef.current = new window.google.maps.Marker({
