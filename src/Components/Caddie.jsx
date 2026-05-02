@@ -496,6 +496,23 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
   )
 
   function getHoleCoords(holeIndex) {
+    const coordinates = selectedCourse?.course?.coordinates || []
+
+    // Use real GPS green center if available
+    if (coordinates.length > 0) {
+      const holeCoords = coordinates.filter(c => c.hole === holeIndex + 1)
+      const green = holeCoords.find(c => c.poi === 1 && c.sideFW === 2) ||
+                    holeCoords.find(c => c.poi === 1) ||
+                    holeCoords.find(c => c.poi === 11)
+      if (green) {
+        return {
+          lat: parseFloat(green.latitude),
+          lng: parseFloat(green.longitude)
+        }
+      }
+    }
+
+    // Fall back to estimated position
     const lat = selectedCourse?.course?.location?.latitude
     const lng = selectedCourse?.course?.location?.longitude
     if (lat && lng) {
@@ -622,7 +639,6 @@ export default function Caddie({ currentHole, setCurrentHole, selectedCourse,
       ? `Player is ${distanceToPin} yards from the pin.`
       : `Full hole distance: ${holeYards} yards.`
 
-    // Wind effect on shot shape
     const windShapeNote = shotShape === 'fade'
       ? `Player hits a fade (left to right). Wind from ${w.windDir} will ${w.windDir.includes('W') ? 'amplify' : 'reduce'} the fade effect.`
       : shotShape === 'draw'
