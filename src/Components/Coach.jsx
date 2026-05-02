@@ -1,5 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 
+function degreesToCardinal(deg) {
+  const dirs = ['N','NE','E','SE','S','SW','W','NW']
+  return dirs[Math.round(deg / 45) % 8]
+}
+
 export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
   const [messages, setMessages] = useState([
     {
@@ -13,6 +18,7 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
   const [transcript, setTranscript] = useState('')
   const [voiceSupported, setVoiceSupported] = useState(false)
   const [voiceError, setVoiceError] = useState('')
+  const [weather, setWeather] = useState(null)
   const bottomRef = useRef(null)
   const recognitionRef = useRef(null)
 
@@ -28,17 +34,33 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (SpeechRecognition) {
-      setVoiceSupported(true)
-    }
+    if (SpeechRecognition) setVoiceSupported(true)
+  }, [])
+
+  // Fetch weather on mount using geolocation
+  useEffect(() => {
+    if (!navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        const { latitude: lat, longitude: lng } = pos.coords
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation&wind_speed_unit=mph&temperature_unit=fahrenheit&timezone=auto`
+        const res = await fetch(url)
+        const data = await res.json()
+        const c = data.current
+        setWeather({
+          windSpeed: Math.round(c.wind_speed_10m),
+          windDir: degreesToCardinal(c.wind_direction_10m),
+          windGusts: Math.round(c.wind_gusts_10m),
+          temp: Math.round(c.temperature_2m),
+          rain: c.precipitation > 0,
+        })
+      } catch {}
+    }, null, { enableHighAccuracy: true, timeout: 12000 })
   }, [])
 
   function toggleVoice() {
-    if (isListening) {
-      stopListening()
-    } else {
-      startListening()
-    }
+    if (isListening) stopListening()
+    else startListening()
   }
 
   function startListening() {
@@ -47,37 +69,27 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
       setVoiceError('Voice not supported in this browser. Try Chrome or Safari.')
       return
     }
-
     setVoiceError('')
     setTranscript('')
-
     const recognition = new SpeechRecognition()
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = 'en-US'
-
     recognition.onstart = () => setIsListening(true)
-
     recognition.onresult = (e) => {
       let interim = ''
       let final = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          final += e.results[i][0].transcript
-        } else {
-          interim += e.results[i][0].transcript
-        }
+        if (e.results[i].isFinal) final += e.results[i][0].transcript
+        else interim += e.results[i][0].transcript
       }
       setTranscript(final || interim)
     }
-
-    recognition.onerror = (e) => {
+    recognition.onerror = () => {
       setVoiceError('Could not hear you. Please try again.')
       setIsListening(false)
     }
-
     recognition.onend = () => setIsListening(false)
-
     recognitionRef.current = recognition
     recognition.start()
   }
@@ -85,7 +97,6 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
   function stopListening() {
     recognitionRef.current?.stop()
     setIsListening(false)
-
     setTimeout(() => {
       if (transcript.trim()) {
         sendMessage(transcript.trim())
@@ -108,6 +119,7 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
 ${courseName ? `Player is at ${courseName}.` : ''}
 ${h ? `Current hole: Hole ${currentHole + 1}, Par ${h.par || '?'}, ${h.yardage || h.yards || '?'} yards, Handicap ${h.handicap || '?'}.` : `Current hole: Hole ${currentHole + 1}.`}
 ${distanceToPin ? `Distance to pin: ${distanceToPin} yards.` : ''}
+${weather ? `Current conditions: ${weather.windSpeed} mph wind from ${weather.windDir}, gusting ${weather.windGusts} mph, ${weather.temp}°F, ${weather.rain ? 'raining' : 'no rain'}.` : ''}
 
 Give direct, specific, actionable golf advice. Be conversational but expert. No markdown, no asterisks, plain text only.`
 
@@ -146,7 +158,7 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
       height: 'calc(100vh - 130px)' }}>
 
       {/* Context banner */}
-      {(courseName || distanceToPin || h) && (
+      {(courseName || distanceToPin || h || weather) && (
         <div style={{ background: 'var(--g1)', padding: '8px 16px',
           display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: 14 }}>📍</span>
@@ -155,8 +167,8 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
             {`Hole ${currentHole + 1}`}
             {h?.par && ` · Par ${h.par}`}
             {(h?.yardage || h?.yards) && ` · ${h.yardage || h.yards} yds`}
-            {h?.handicap && ` · Hcp ${h.handicap}`}
             {distanceToPin && ` · ${distanceToPin} yds to pin`}
+            {weather && ` · 💨 ${weather.windSpeed}mph ${weather.windDir} · ${weather.temp}°F`}
           </div>
         </div>
       )}
@@ -241,7 +253,6 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
       <div style={{ padding: '8px 16px 16px', borderTop: '1px solid var(--bd)',
         background: '#fff', flexShrink: 0 }}>
 
-        {/* Quick prompts */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 10,
           overflowX: 'auto', paddingBottom: 4 }}>
           {[
