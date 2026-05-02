@@ -5,7 +5,7 @@ function degreesToCardinal(deg) {
   return dirs[Math.round(deg / 45) % 8]
 }
 
-export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
+export default function Coach({ currentHole, selectedCourse, distanceToPin, scores = [] }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -28,6 +28,22 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
   const h = holes[currentHole]
   const courseName = selectedCourse?.course?.club_name || null
 
+  // Score context
+  const playedScores = scores.filter(s => s !== null)
+  const totalStrokes = playedScores.reduce((a, b) => a + b, 0)
+  const totalPar = holes.slice(0, playedScores.length).reduce((a, h) => a + (h?.par || 4), 0)
+  const scoreDiff = playedScores.length > 0 ? totalStrokes - totalPar : null
+
+  function getScoreContext() {
+    if (scoreDiff === null) return ''
+    if (scoreDiff <= -2) return `Player is ${Math.abs(scoreDiff)} under par through ${playedScores.length} holes — playing great, recommend aggressive strategy.`
+    if (scoreDiff === -1) return `Player is 1 under par through ${playedScores.length} holes — stay aggressive but smart.`
+    if (scoreDiff === 0) return `Player is even par through ${playedScores.length} holes — play your game.`
+    if (scoreDiff <= 2) return `Player is ${scoreDiff} over par through ${playedScores.length} holes — play smart, avoid bogey makers.`
+    if (scoreDiff <= 5) return `Player is ${scoreDiff} over par through ${playedScores.length} holes — play conservative, minimize mistakes.`
+    return `Player is ${scoreDiff} over par through ${playedScores.length} holes — play safe, focus on bogey golf.`
+  }
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
@@ -37,7 +53,6 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
     if (SpeechRecognition) setVoiceSupported(true)
   }, [])
 
-  // Fetch weather on mount using geolocation
   useEffect(() => {
     if (!navigator.geolocation) return
     navigator.geolocation.getCurrentPosition(async (pos) => {
@@ -77,8 +92,7 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
     recognition.lang = 'en-US'
     recognition.onstart = () => setIsListening(true)
     recognition.onresult = (e) => {
-      let interim = ''
-      let final = ''
+      let interim = '', final = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) final += e.results[i][0].transcript
         else interim += e.results[i][0].transcript
@@ -115,13 +129,18 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
     setInput('')
     setLoading(true)
 
+    const shotShape = localStorage.getItem('shot_shape') || 'fade'
+    const scoreContext = getScoreContext()
+
     const systemContext = `You are Eagle, an elite AI golf coach and caddie.
 ${courseName ? `Player is at ${courseName}.` : ''}
 ${h ? `Current hole: Hole ${currentHole + 1}, Par ${h.par || '?'}, ${h.yardage || h.yards || '?'} yards, Handicap ${h.handicap || '?'}.` : `Current hole: Hole ${currentHole + 1}.`}
 ${distanceToPin ? `Distance to pin: ${distanceToPin} yards.` : ''}
-${weather ? `Current conditions: ${weather.windSpeed} mph wind from ${weather.windDir}, gusting ${weather.windGusts} mph, ${weather.temp}°F, ${weather.rain ? 'raining' : 'no rain'}.` : ''}
+${weather ? `Conditions: ${weather.windSpeed} mph wind from ${weather.windDir}, gusting ${weather.windGusts} mph, ${weather.temp}°F, ${weather.rain ? 'raining' : 'no rain'}.` : ''}
+${scoreContext ? scoreContext : ''}
+Shot shape: ${shotShape}.
 
-Give direct, specific, actionable golf advice. Be conversational but expert. No markdown, no asterisks, plain text only.`
+Give direct, specific, actionable golf advice. Factor in all conditions automatically without being asked. Be conversational but expert. No markdown, no asterisks, plain text only.`
 
     try {
       const res = await fetch('/api/chat', {
@@ -154,8 +173,7 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column',
-      height: 'calc(100vh - 130px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 130px)' }}>
 
       {/* Context banner */}
       {(courseName || distanceToPin || h || weather) && (
@@ -169,6 +187,7 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
             {(h?.yardage || h?.yards) && ` · ${h.yardage || h.yards} yds`}
             {distanceToPin && ` · ${distanceToPin} yds to pin`}
             {weather && ` · 💨 ${weather.windSpeed}mph ${weather.windDir} · ${weather.temp}°F`}
+            {scoreDiff !== null && ` · ${scoreDiff > 0 ? '+' : ''}${scoreDiff} thru ${playedScores.length}`}
           </div>
         </div>
       )}
@@ -192,8 +211,7 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
               background: msg.role === 'user' ? 'var(--g1)' : '#fff',
               color: msg.role === 'user' ? '#fff' : 'var(--tx)',
               border: msg.role === 'assistant' ? '1px solid var(--bd)' : 'none',
-              borderRadius: msg.role === 'user'
-                ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+              borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
               padding: '10px 14px',
               fontSize: 14,
               lineHeight: 1.6,
@@ -218,7 +236,7 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
         <div ref={bottomRef} />
       </div>
 
-      {/* Voice transcript preview */}
+      {/* Voice transcript */}
       {(isListening || transcript) && (
         <div style={{ margin: '0 16px 8px', background: 'var(--g1)',
           borderRadius: 12, padding: '10px 14px' }}>
@@ -240,11 +258,9 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
         </div>
       )}
 
-      {/* Voice error */}
       {voiceError && (
         <div style={{ margin: '0 16px 8px', background: '#fee2e2',
-          borderRadius: 10, padding: '8px 12px',
-          fontSize: 12, color: '#991b1b' }}>
+          borderRadius: 10, padding: '8px 12px', fontSize: 12, color: '#991b1b' }}>
           {voiceError}
         </div>
       )}
@@ -252,7 +268,6 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
       {/* Input area */}
       <div style={{ padding: '8px 16px 16px', borderTop: '1px solid var(--bd)',
         background: '#fff', flexShrink: 0 }}>
-
         <div style={{ display: 'flex', gap: 6, marginBottom: 10,
           overflowX: 'auto', paddingBottom: 4 }}>
           {[
@@ -265,8 +280,7 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
             <button key={q} onClick={() => sendMessage(q)}
               style={{ background: 'var(--bg2)', border: '1px solid var(--bd)',
                 borderRadius: 20, padding: '4px 12px', cursor: 'pointer',
-                fontSize: 11, color: 'var(--tx)', whiteSpace: 'nowrap',
-                flexShrink: 0 }}>
+                fontSize: 11, color: 'var(--tx)', whiteSpace: 'nowrap', flexShrink: 0 }}>
               {q}
             </button>
           ))}
@@ -289,11 +303,9 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
               style={{ width: 44, height: 44, borderRadius: '50%',
                 border: 'none', cursor: 'pointer', flexShrink: 0,
                 background: isListening ? '#ef4444' : 'var(--g1)',
-                display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: 18,
-                transition: 'all 0.2s',
-                boxShadow: isListening
-                  ? '0 0 0 4px rgba(239,68,68,0.2)' : 'none' }}>
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 18, transition: 'all 0.2s',
+                boxShadow: isListening ? '0 0 0 4px rgba(239,68,68,0.2)' : 'none' }}>
               {isListening ? '⏹️' : '🎤'}
             </button>
           )}
@@ -303,14 +315,13 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
             style={{ width: 44, height: 44, borderRadius: '50%',
               border: 'none', cursor: 'pointer', flexShrink: 0,
               background: input.trim() && !loading ? 'var(--g1)' : 'var(--bg2)',
-              display: 'flex', alignItems: 'center',
-              justifyContent: 'center', fontSize: 18 }}>
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18 }}>
             ➤
           </button>
         </div>
 
-        <div style={{ fontSize: 10, color: 'var(--tx2)', textAlign: 'center',
-          marginTop: 8 }}>
+        <div style={{ fontSize: 10, color: 'var(--tx2)', textAlign: 'center', marginTop: 8 }}>
           {voiceSupported
             ? 'Tap 🎤 to start voice · tap ⏹️ to stop and send'
             : 'Type your question and press Enter'}

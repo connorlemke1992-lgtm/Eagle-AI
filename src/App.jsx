@@ -234,6 +234,7 @@ export default function App() {
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh',
       background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
 
+      {/* Header */}
       <div style={{ background: 'var(--g1)', padding: '12px 16px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
@@ -271,6 +272,7 @@ export default function App() {
         </div>
       </div>
 
+      {/* Profile dropdown */}
       {showProfile && (
         <div style={{ background: 'var(--g1)', padding: '12px 16px',
           borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
@@ -289,6 +291,7 @@ export default function App() {
         </div>
       )}
 
+      {/* Tab content */}
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 70 }}>
         {activeTab === 'caddie' && (
           <Caddie
@@ -301,6 +304,7 @@ export default function App() {
             distanceToPin={distanceToPin}
             playerElevation={playerElevation}
             pinElevation={pinElevation}
+            scores={scores}
           />
         )}
         {activeTab === 'scorecard' && (
@@ -328,6 +332,7 @@ export default function App() {
             currentHole={currentHole}
             selectedCourse={selectedCourse}
             distanceToPin={distanceToPin}
+            scores={scores}
           />
         )}
         {activeTab === 'map' && (
@@ -349,6 +354,7 @@ export default function App() {
         )}
       </div>
 
+      {/* Bottom nav */}
       <div style={{ position: 'fixed', bottom: 0, left: '50%',
         transform: 'translateX(-50%)', width: '100%', maxWidth: 480,
         background: '#fff', borderTop: '1px solid var(--bd)',

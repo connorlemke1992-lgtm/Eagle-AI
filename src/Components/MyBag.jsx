@@ -17,6 +17,12 @@ const defaultClubs = [
   { name: 'LW', yards: 65 },
 ]
 
+const SHOT_SHAPES = [
+  { value: 'draw', label: 'Draw', desc: 'Right to left', icon: '↙️' },
+  { value: 'straight', label: 'Straight', desc: 'No curve', icon: '⬇️' },
+  { value: 'fade', label: 'Fade', desc: 'Left to right', icon: '↘️' },
+]
+
 export default function MyBag({ onBack }) {
   const [clubs, setClubs] = useState(defaultClubs)
   const [saved, setSaved] = useState(false)
@@ -26,10 +32,13 @@ export default function MyBag({ onBack }) {
   const [newClubName, setNewClubName] = useState('')
   const [newClubYards, setNewClubYards] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [shotShape, setShotShape] = useState('fade')
 
   useEffect(() => {
     const stored = localStorage.getItem('my_bag')
     if (stored) setClubs(JSON.parse(stored))
+    const shape = localStorage.getItem('shot_shape')
+    if (shape) setShotShape(shape)
   }, [])
 
   function updateYardage(index, value) {
@@ -81,6 +90,7 @@ export default function MyBag({ onBack }) {
 
   function saveBag() {
     localStorage.setItem('my_bag', JSON.stringify(clubs))
+    localStorage.setItem('shot_shape', shotShape)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -88,7 +98,6 @@ export default function MyBag({ onBack }) {
   return (
     <div style={{ padding: 16 }}>
 
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <button onClick={onBack}
           style={{ border: '1px solid var(--bd)', borderRadius: 8,
@@ -104,23 +113,48 @@ export default function MyBag({ onBack }) {
         </div>
       </div>
 
-      {/* Info banner */}
+      {/* Shot Shape Selector */}
+      <div style={{ background: '#fff', border: '1px solid var(--bd)',
+        borderRadius: 12, padding: 14, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)', marginBottom: 10 }}>
+          🏌️ My Natural Shot Shape
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+          {SHOT_SHAPES.map(s => (
+            <button key={s.value} onClick={() => { setShotShape(s.value); setSaved(false) }}
+              style={{
+                background: shotShape === s.value ? 'var(--g1)' : 'var(--bg2)',
+                border: shotShape === s.value ? '2px solid var(--g3)' : '1px solid var(--bd)',
+                borderRadius: 10, padding: '10px 6px', cursor: 'pointer',
+                textAlign: 'center'
+              }}>
+              <div style={{ fontSize: 20, marginBottom: 4 }}>{s.icon}</div>
+              <div style={{ fontSize: 13, fontWeight: 600,
+                color: shotShape === s.value ? '#fff' : 'var(--tx)' }}>
+                {s.label}
+              </div>
+              <div style={{ fontSize: 10,
+                color: shotShape === s.value ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>
+                {s.desc}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div style={{ background: 'var(--g1)', borderRadius: 10,
         padding: '10px 14px', marginBottom: 16, fontSize: 12,
         color: 'rgba(255,255,255,0.7)', lineHeight: 1.5 }}>
         🎯 Tap a club name to rename it · tap 🗑️ to delete · tap + Add Club to add a new one
       </div>
 
-      {/* Club list */}
-      <div style={{ display: 'flex', flexDirection: 'column',
-        gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
         {clubs.map((club, i) => (
           <div key={i}
             style={{ background: '#fff', border: '1px solid var(--bd)',
               borderRadius: 10, padding: '10px 14px',
               display: 'flex', alignItems: 'center', gap: 8 }}>
 
-            {/* Club name — tap to edit */}
             {editingName === i ? (
               <input
                 autoFocus
@@ -133,8 +167,7 @@ export default function MyBag({ onBack }) {
                 }}
                 style={{ flex: 1, border: '2px solid var(--g3)',
                   borderRadius: 8, padding: '4px 8px',
-                  fontSize: 14, fontWeight: 600, color: 'var(--tx)',
-                  outline: 'none' }}
+                  fontSize: 14, fontWeight: 600, color: 'var(--tx)', outline: 'none' }}
               />
             ) : (
               <button onClick={() => startEditName(i)}
@@ -148,7 +181,6 @@ export default function MyBag({ onBack }) {
               </button>
             )}
 
-            {/* Yardage input */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input
                 type="number"
@@ -161,7 +193,6 @@ export default function MyBag({ onBack }) {
               <span style={{ fontSize: 12, color: 'var(--tx2)' }}>yds</span>
             </div>
 
-            {/* Delete button */}
             <button onClick={() => deleteClub(i)}
               style={{ background: deleteConfirm === i ? '#fee2e2' : 'transparent',
                 border: deleteConfirm === i ? '1px solid #fca5a5' : 'none',
@@ -174,22 +205,21 @@ export default function MyBag({ onBack }) {
         ))}
       </div>
 
-      {/* Add Club */}
       {!showAddClub ? (
         <button onClick={() => setShowAddClub(true)}
           style={{ width: '100%', background: '#fff',
             border: '2px dashed var(--bd)', borderRadius: 10,
             padding: '12px', marginBottom: 16, cursor: 'pointer',
             fontSize: 14, fontWeight: 600, color: 'var(--tx2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            gap: 8 }}>
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           ➕ Add Club
         </button>
       ) : (
         <div style={{ background: '#fff', border: '1px solid var(--bd)',
           borderRadius: 10, padding: 14, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)',
-            marginBottom: 12 }}>Add New Club</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)', marginBottom: 12 }}>
+            Add New Club
+          </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <input
               autoFocus
@@ -207,8 +237,7 @@ export default function MyBag({ onBack }) {
               placeholder="Yds"
               onKeyDown={e => e.key === 'Enter' && addClub()}
               style={{ width: 90, border: '1px solid var(--bd)', borderRadius: 8,
-                padding: '8px 10px', fontSize: 13, textAlign: 'center',
-                color: 'var(--tx)' }}
+                padding: '8px 10px', fontSize: 13, textAlign: 'center', color: 'var(--tx)' }}
             />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -220,14 +249,9 @@ export default function MyBag({ onBack }) {
                 opacity: !newClubName.trim() ? 0.5 : 1 }}>
               ➕ Add
             </button>
-            <button onClick={() => {
-              setShowAddClub(false)
-              setNewClubName('')
-              setNewClubYards('')
-            }}
-              style={{ flex: 1, background: 'var(--bg2)',
-                border: '1px solid var(--bd)', borderRadius: 8,
-                padding: '10px', cursor: 'pointer',
+            <button onClick={() => { setShowAddClub(false); setNewClubName(''); setNewClubYards('') }}
+              style={{ flex: 1, background: 'var(--bg2)', border: '1px solid var(--bd)',
+                borderRadius: 8, padding: '10px', cursor: 'pointer',
                 fontSize: 13, color: 'var(--tx2)' }}>
               Cancel
             </button>
@@ -235,7 +259,6 @@ export default function MyBag({ onBack }) {
         </div>
       )}
 
-      {/* Save button */}
       <button onClick={saveBag}
         style={{ width: '100%', background: saved ? '#4ade80' : 'var(--g1)',
           color: saved ? '#1a3a2a' : '#fff', border: 'none', borderRadius: 10,
