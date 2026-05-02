@@ -16,7 +16,8 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
   const bottomRef = useRef(null)
   const recognitionRef = useRef(null)
 
-  const holes = selectedCourse?.course?.tees?.male?.[0]?.holes ||
+  const holes = selectedCourse?.course?.holes ||
+                selectedCourse?.course?.tees?.male?.[0]?.holes ||
                 selectedCourse?.course?.tees?.female?.[0]?.holes || []
   const h = holes[currentHole]
   const courseName = selectedCourse?.course?.club_name || null
@@ -25,7 +26,6 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  // Check voice support
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (SpeechRecognition) {
@@ -86,7 +86,6 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
     recognitionRef.current?.stop()
     setIsListening(false)
 
-    // Send transcript as message after short delay
     setTimeout(() => {
       if (transcript.trim()) {
         sendMessage(transcript.trim())
@@ -107,7 +106,7 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin }) {
 
     const systemContext = `You are Eagle, an elite AI golf coach and caddie.
 ${courseName ? `Player is at ${courseName}.` : ''}
-${h ? `Current hole: Hole ${currentHole + 1}, Par ${h.par}, ${h.yardage || h.yards} yards.` : ''}
+${h ? `Current hole: Hole ${currentHole + 1}, Par ${h.par || '?'}, ${h.yardage || h.yards || '?'} yards, Handicap ${h.handicap || '?'}.` : `Current hole: Hole ${currentHole + 1}.`}
 ${distanceToPin ? `Distance to pin: ${distanceToPin} yards.` : ''}
 
 Give direct, specific, actionable golf advice. Be conversational but expert. No markdown, no asterisks, plain text only.`
@@ -147,13 +146,16 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
       height: 'calc(100vh - 130px)' }}>
 
       {/* Context banner */}
-      {(courseName || distanceToPin) && (
+      {(courseName || distanceToPin || h) && (
         <div style={{ background: 'var(--g1)', padding: '8px 16px',
           display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: 14 }}>📍</span>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
             {courseName && `${courseName} · `}
-            {h && `Hole ${currentHole + 1} · Par ${h.par}`}
+            {`Hole ${currentHole + 1}`}
+            {h?.par && ` · Par ${h.par}`}
+            {(h?.yardage || h?.yards) && ` · ${h.yardage || h.yards} yds`}
+            {h?.handicap && ` · Hcp ${h.handicap}`}
             {distanceToPin && ` · ${distanceToPin} yds to pin`}
           </div>
         </div>
@@ -260,7 +262,6 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-          {/* Text input */}
           <textarea value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -272,7 +273,6 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
               background: 'var(--bg2)', color: 'var(--tx)',
               lineHeight: 1.4, maxHeight: 100, overflowY: 'auto' }} />
 
-          {/* Voice button */}
           {voiceSupported && (
             <button onClick={toggleVoice}
               style={{ width: 44, height: 44, borderRadius: '50%',
@@ -287,7 +287,6 @@ Give direct, specific, actionable golf advice. Be conversational but expert. No 
             </button>
           )}
 
-          {/* Send button */}
           <button onClick={() => sendMessage()}
             disabled={!input.trim() || loading}
             style={{ width: 44, height: 44, borderRadius: '50%',
