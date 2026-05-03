@@ -76,18 +76,15 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const frontMarkerRef = useRef(null)
   const backMarkerRef = useRef(null)
   const hazardMarkersRef = useRef([])
-  const measureMarkersRef = useRef([])
-  const measureLineRef = useRef(null)
   const shotLinesRef = useRef([])
   const shotMarkersRef = useRef([])
   const infoWindowRef = useRef(null)
   const pinPulseRef = useRef(null)
   const shotModeRef = useRef('idle')
   const distanceLineRef = useRef(null)
+  const crosshairLineRef = useRef(null)
+  const crosshairMarkerRef = useRef(null)
 
-  const [tapDist, setTapDist] = useState(null)
-  const [tapClub, setTapClub] = useState(null)
-  const [tapElevAdj, setTapElevAdj] = useState(null)
   const [courseData, setCourseData] = useState(() => {
     try {
       const stored = localStorage.getItem('selected_course')
@@ -113,6 +110,8 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const [frontDist, setFrontDist] = useState(null)
   const [midDist, setMidDist] = useState(null)
   const [backDist, setBackDist] = useState(null)
+  const [crosshairDist, setCrosshairDist] = useState(null)
+  const [crosshairClub, setCrosshairClub] = useState(null)
   const bag = loadBag()
 
   const coordinates = courseData?.course?.coordinates || []
@@ -412,7 +411,16 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     mapInstanceRef.current = map
     infoWindowRef.current = new window.google.maps.InfoWindow()
     placeHoleMarkers(map)
-    addMapClickListener(map)
+
+    // Crosshair drag listener — updates distance as map moves
+    map.addListener('center_changed', () => {
+      updateCrosshairDistance(map)
+    })
+
+    map.addListener('idle', () => {
+      updateCrosshairDistance(map)
+    })
+
     if (playerPos) {
       playerMarkerRef.current = new window.google.maps.Marker({
         position: playerPos, map,
@@ -425,6 +433,36 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     }
     drawShotLines()
     setTimeout(() => updateDistanceLine(), 500)
+    setTimeout(() => updateCrosshairDistance(map), 500)
+  }
+
+  function updateCrosshairDistance(map) {
+    if (!map) return
+    const center = map.getCenter()
+    if (!center) return
+
+    const centerLat = center.lat()
+    const centerLng = center.lng()
+
+    // Measure from player if available, else from tee
+    const teeCoords = getTeeCoords(currentHole)
+    const refPoint = playerPos || teeCoords
+    const dist = haversineYards(refPoint.lat, refPoint.lng, centerLat, centerLng)
+    const club = bestClub(dist, bag)
+
+    setCrosshairDist(dist)
+    setCrosshairClub(club)
+
+    // Draw line from ref point to crosshair
+    if (crosshairLineRef.current) crosshairLineRef.current.setMap(null)
+    crosshairLineRef.current = new window.google.maps.Polyline({
+      path: [refPoint, { lat: centerLat, lng: centerLng }],
+      geodesic: true, strokeColor: '#ffcc00',
+      strokeOpacity: 0.85, strokeWeight: 2,
+      icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
+        offset: '0', repeat: '12px' }],
+      map,
+    })
   }
 
   function placeHoleMarkers(map) {
@@ -512,84 +550,21 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     setTimeout(() => startPinPulse(), 500)
   }
 
-  function addMapClickListener(map) {
-    map.addListener('click', async (e) => {
-      if (shotModeRef.current === 'waiting_for_ball') return
-
-      measureMarkersRef.current.forEach(m => m.setMap(null))
-      measureMarkersRef.current = []
-      if (measureLineRef.current) measureLineRef.current.setMap(null)
-
-      const refPoint = getTeeCoords(currentHole)
-      const rawDist = haversineYards(
-        refPoint.lat, refPoint.lng,
-        e.latLng.lat(), e.latLng.lng()
-      )
-
-      const targetElev = await getElevationMeters(e.latLng.lat(), e.latLng.lng())
-      const adjDist = adjustYardsForElevation(rawDist, playerElevation, targetElev)
-      const elevAdj = (playerElevation && targetElev)
-        ? Math.round((targetElev - playerElevation) * 3.281)
-        : null
-      const club = bestClub(adjDist, bag)
-
-      measureLineRef.current = new window.google.maps.Polyline({
-        path: [refPoint, e.latLng],
-        geodesic: true, strokeColor: '#ffcc00',
-        strokeOpacity: 0.9, strokeWeight: 2,
-        icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
-          offset: '0', repeat: '15px' }],
-        map,
-      })
-
-      const endM = new window.google.maps.Marker({
-        position: e.latLng, map,
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 8, fillColor: '#ffcc00', fillOpacity: 1,
-          strokeColor: '#fff', strokeWeight: 2,
-        }
-      })
-      measureMarkersRef.current.push(endM)
-
-      infoWindowRef.current.setContent(`
-        <div style="font-family:Inter,sans-serif;padding:6px;min-width:140px">
-          <div style="font-size:22px;font-weight:800;color:#111;line-height:1">${adjDist}y</div>
-          ${elevAdj !== null && elevAdj !== 0 ? `
-            <div style="font-size:11px;color:#666;margin-top:2px">
-              ${rawDist}y flat · ${elevAdj > 0 ? '+' : ''}${elevAdj}ft
-            </div>` : ''}
-          <div style="font-size:14px;color:#1a5c33;font-weight:700;margin-top:4px">
-            ${club.name}
-          </div>
-          <div style="font-size:11px;color:#888">${club.yards}y club</div>
-        </div>
-      `)
-      infoWindowRef.current.open(map, endM)
-      setTapDist(adjDist)
-      setTapClub(club)
-      setTapElevAdj(elevAdj)
-    })
-  }
-
   function moveToHole() {
     const teeCoords = getTeeCoords(currentHole)
     mapInstanceRef.current.panTo(teeCoords)
     mapInstanceRef.current.setZoom(17)
     placeHoleMarkers(mapInstanceRef.current)
-    measureMarkersRef.current.forEach(m => m.setMap(null))
-    measureMarkersRef.current = []
-    if (measureLineRef.current) measureLineRef.current.setMap(null)
     if (distanceLineRef.current) distanceLineRef.current.setMap(null)
-    infoWindowRef.current?.close()
-    setTapDist(null)
-    setTapClub(null)
-    setTapElevAdj(null)
+    if (crosshairLineRef.current) crosshairLineRef.current.setMap(null)
+    setCrosshairDist(null)
+    setCrosshairClub(null)
     setShotMode('idle')
     shotModeRef.current = 'idle'
     setShotStart(null)
     drawShotLines()
     setTimeout(() => updateDistanceLine(), 300)
+    setTimeout(() => updateCrosshairDistance(mapInstanceRef.current), 300)
   }
 
   if (showSearch) {
@@ -611,7 +586,55 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
   return (
     <div style={{ position: 'relative', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
 
+      {/* Full screen map */}
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+
+      {/* Fixed crosshair in center */}
+      <div style={{ position: 'absolute', top: '50%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        zIndex: 10, pointerEvents: 'none' }}>
+        <div style={{ position: 'relative', width: 60, height: 60,
+          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* Outer circle */}
+          <div style={{ position: 'absolute', width: 60, height: 60,
+            borderRadius: '50%', border: '2px solid rgba(255,255,255,0.8)',
+            boxShadow: '0 0 8px rgba(0,0,0,0.5)' }} />
+          {/* Inner dot */}
+          <div style={{ width: 6, height: 6, borderRadius: '50%',
+            background: '#fff', boxShadow: '0 0 4px rgba(0,0,0,0.8)' }} />
+          {/* Cross lines */}
+          <div style={{ position: 'absolute', width: 20, height: 2,
+            background: 'rgba(255,255,255,0.8)', left: -20, top: '50%',
+            transform: 'translateY(-50%)' }} />
+          <div style={{ position: 'absolute', width: 20, height: 2,
+            background: 'rgba(255,255,255,0.8)', right: -20, top: '50%',
+            transform: 'translateY(-50%)' }} />
+          <div style={{ position: 'absolute', height: 20, width: 2,
+            background: 'rgba(255,255,255,0.8)', top: -20, left: '50%',
+            transform: 'translateX(-50%)' }} />
+          <div style={{ position: 'absolute', height: 20, width: 2,
+            background: 'rgba(255,255,255,0.8)', bottom: -20, left: '50%',
+            transform: 'translateX(-50%)' }} />
+        </div>
+
+        {/* Distance bubble next to crosshair */}
+        {crosshairDist !== null && (
+          <div style={{ position: 'absolute', left: 40, top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'rgba(15,30,20,0.92)', borderRadius: 10,
+            padding: '6px 12px', backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 22, fontWeight: 800,
+              fontFamily: 'Bebas Neue', color: '#fff', lineHeight: 1 }}>
+              {crosshairDist}y
+            </div>
+            <div style={{ fontSize: 11, color: '#4ade80', fontWeight: 600 }}>
+              {crosshairClub?.name}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Top hole info bar */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0,
@@ -623,20 +646,41 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
             style={{ background: 'rgba(255,255,255,0.1)', border: 'none',
               borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
               color: '#fff', fontSize: 16, opacity: currentHole === 0 ? 0.3 : 1 }}>←</button>
+
           <div style={{ textAlign: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, justifyContent: 'center' }}>
-              <div style={{ fontFamily: 'Bebas Neue', fontSize: 28, color: '#fff', lineHeight: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center',
+              gap: 12, justifyContent: 'center' }}>
+              <div style={{ fontFamily: 'Bebas Neue', fontSize: 24,
+                color: '#fff', lineHeight: 1 }}>
                 Hole {currentHole + 1}
               </div>
-              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
-                Par {hPar || '—'} · {hYards || '—'} yds
-                {hHcp ? ` · Hcp ${hHcp}` : ''}
+              {/* Remaining distance to pin — always visible */}
+              {activeDistToPin && (
+                <div style={{ background: 'rgba(74,222,128,0.2)',
+                  border: '1px solid rgba(74,222,128,0.4)',
+                  borderRadius: 8, padding: '4px 10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)',
+                    textTransform: 'uppercase', letterSpacing: '0.05em' }}>To Pin</div>
+                  <div style={{ fontSize: 20, fontWeight: 800,
+                    fontFamily: 'Bebas Neue', color: '#4ade80', lineHeight: 1 }}>
+                    {activeDistToPin}y
+                  </div>
+                  {elevDiff !== null && elevDiff !== 0 && (
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>
+                      {elevDiff > 0 ? `▲${elevDiff}ft` : `▼${Math.abs(elevDiff)}ft`}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
+                Par {hPar || '—'} · {hYards || '—'}y
               </div>
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
               {courseData?.course?.club_name || ''}
             </div>
           </div>
+
           <button onClick={() => setCurrentHole(Math.min(17, currentHole + 1))}
             disabled={currentHole >= 17}
             style={{ background: 'rgba(255,255,255,0.1)', border: 'none',
@@ -646,35 +690,35 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
       </div>
 
       {/* Front / Mid / Back selector */}
-      {(frontDist || midDist || backDist || playerPos) && (
-        <div style={{ position: 'absolute', top: 78, left: '50%',
-          transform: 'translateX(-50%)', zIndex: 10, display: 'flex', gap: 6 }}>
-          {[
-            { key: 'front', label: 'Front', dist: frontDist },
-            { key: 'middle', label: 'Mid', dist: midDist },
-            { key: 'back', label: 'Back', dist: backDist },
-          ].map(p => (
-            <button key={p.key} onClick={() => selectPinPosition(p.key)}
-              style={{ background: pinPosition === p.key
-                ? 'rgba(74,222,128,0.9)' : 'rgba(15,30,20,0.85)',
-                border: pinPosition === p.key ? '2px solid #4ade80' : '1px solid rgba(255,255,255,0.2)',
-                borderRadius: 10, padding: '6px 10px', cursor: 'pointer',
-                textAlign: 'center', backdropFilter: 'blur(8px)', minWidth: 70 }}>
-              <div style={{ fontSize: 10, color: pinPosition === p.key
-                ? '#1a3a2a' : 'rgba(255,255,255,0.6)',
-                textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                {p.label}
-              </div>
-              <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'Bebas Neue',
-                color: pinPosition === p.key ? '#1a3a2a' : (p.dist ? '#fff' : 'rgba(255,255,255,0.3)') }}>
-                {p.dist || '—'}
-              </div>
-              <div style={{ fontSize: 9, color: pinPosition === p.key
-                ? '#1a3a2a' : 'rgba(255,255,255,0.4)' }}>yds</div>
-            </button>
-          ))}
-        </div>
-      )}
+      <div style={{ position: 'absolute', top: 78, left: '50%',
+        transform: 'translateX(-50%)', zIndex: 10, display: 'flex', gap: 6 }}>
+        {[
+          { key: 'front', label: 'Front', dist: frontDist },
+          { key: 'middle', label: 'Mid', dist: midDist },
+          { key: 'back', label: 'Back', dist: backDist },
+        ].map(p => (
+          <button key={p.key} onClick={() => selectPinPosition(p.key)}
+            style={{ background: pinPosition === p.key
+              ? 'rgba(74,222,128,0.9)' : 'rgba(15,30,20,0.85)',
+              border: pinPosition === p.key
+                ? '2px solid #4ade80' : '1px solid rgba(255,255,255,0.2)',
+              borderRadius: 10, padding: '5px 10px', cursor: 'pointer',
+              textAlign: 'center', backdropFilter: 'blur(8px)', minWidth: 64 }}>
+            <div style={{ fontSize: 9, color: pinPosition === p.key
+              ? '#1a3a2a' : 'rgba(255,255,255,0.6)',
+              textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {p.label}
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, fontFamily: 'Bebas Neue',
+              color: pinPosition === p.key ? '#1a3a2a'
+                : (p.dist ? '#fff' : 'rgba(255,255,255,0.3)') }}>
+              {p.dist || '—'}
+            </div>
+            <div style={{ fontSize: 8, color: pinPosition === p.key
+              ? '#1a3a2a' : 'rgba(255,255,255,0.4)' }}>yds</div>
+          </button>
+        ))}
+      </div>
 
       {/* Pin prompt */}
       {showPinPrompt && (
@@ -689,7 +733,8 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 14 }}>
             Select a position — Eagle will place the pin on the actual green
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
+            gap: 8, marginBottom: 10 }}>
             {[
               { label: 'Front', icon: '⬆️', key: 'front' },
               { label: 'Middle', icon: '🎯', key: 'middle' },
@@ -712,67 +757,6 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
               color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
             Skip — I'll drag the pin manually
           </button>
-        </div>
-      )}
-
-      {/* Tap distance bubble */}
-      {tapDist && (
-        <div style={{ position: 'absolute', bottom: 180, left: '50%',
-          transform: 'translateX(-50%)', zIndex: 10,
-          background: 'rgba(15,30,20,0.92)', borderRadius: 14,
-          padding: '10px 20px', backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(74,222,128,0.3)',
-          display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)',
-              textTransform: 'uppercase' }}>Distance</div>
-            <div style={{ fontSize: 32, fontWeight: 800,
-              fontFamily: 'Bebas Neue', color: '#fff', lineHeight: 1 }}>
-              {tapDist}y
-            </div>
-            {tapElevAdj !== null && tapElevAdj !== 0 && (
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
-                {tapElevAdj > 0 ? `▲ +${tapElevAdj}ft` : `▼ ${tapElevAdj}ft`}
-              </div>
-            )}
-          </div>
-          <div style={{ width: 1, height: 40, background: 'rgba(255,255,255,0.15)' }} />
-          <div>
-            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)',
-              textTransform: 'uppercase' }}>Club</div>
-            <div style={{ fontSize: 24, fontWeight: 800,
-              fontFamily: 'Bebas Neue', color: '#4ade80', lineHeight: 1 }}>
-              {tapClub?.name}
-            </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
-              {tapClub?.yards}y
-            </div>
-          </div>
-          <button onClick={() => setTapDist(null)}
-            style={{ background: 'rgba(255,255,255,0.1)', border: 'none',
-              borderRadius: 6, padding: '4px 8px', cursor: 'pointer',
-              color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>✕</button>
-        </div>
-      )}
-
-      {/* Live distance to pin bubble */}
-      {activeDistToPin && !tapDist && (
-        <div style={{ position: 'absolute', bottom: 180, left: '50%',
-          transform: 'translateX(-50%)', zIndex: 10,
-          background: 'rgba(15,30,20,0.92)', borderRadius: 14,
-          padding: '8px 20px', backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(74,222,128,0.2)', textAlign: 'center' }}>
-          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)',
-            textTransform: 'uppercase', letterSpacing: '0.07em' }}>To Pin</div>
-          <div style={{ fontSize: 36, fontWeight: 800,
-            fontFamily: 'Bebas Neue', color: '#4ade80', lineHeight: 1 }}>
-            {activeDistToPin}y
-          </div>
-          {elevDiff !== null && elevDiff !== 0 && (
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
-              {elevDiff > 0 ? `▲ ${elevDiff}ft uphill` : `▼ ${Math.abs(elevDiff)}ft downhill`}
-            </div>
-          )}
         </div>
       )}
 
@@ -901,14 +885,19 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
 
         {showDrawer && (
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr',
+              gap: 8, marginBottom: 8 }}>
               <button onClick={() => setShowPinPrompt(true)}
                 style={{ background: 'rgba(255,255,255,0.08)', border: 'none',
                   borderRadius: 8, padding: '8px', cursor: 'pointer',
                   color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
                 🟢 Move Pin
               </button>
-              <button onClick={() => { onCourseSelect(null); setCourseData(null); mapInstanceRef.current = null }}
+              <button onClick={() => {
+                onCourseSelect(null)
+                setCourseData(null)
+                mapInstanceRef.current = null
+              }}
                 style={{ background: 'rgba(255,255,255,0.08)', border: 'none',
                   borderRadius: 8, padding: '8px', cursor: 'pointer',
                   color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
@@ -916,9 +905,11 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
               </button>
             </div>
             {holeShots.length > 0 && (
-              <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: 10 }}>
+              <div style={{ background: 'rgba(255,255,255,0.06)',
+                borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)',
-                  marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  marginBottom: 6, textTransform: 'uppercase',
+                  letterSpacing: '0.05em' }}>
                   Shot History — Hole {currentHole + 1}
                 </div>
                 {holeShots.map((shot, i) => (
@@ -927,14 +918,16 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
                     borderBottom: i < holeShots.length - 1
                       ? '1px solid rgba(255,255,255,0.07)' : 'none' }}>
                     <span>Shot {i + 1} — {shot.club}</span>
-                    <span style={{ color: '#4ade80', fontWeight: 600 }}>{shot.distance}y</span>
+                    <span style={{ color: '#4ade80', fontWeight: 600 }}>
+                      {shot.distance}y
+                    </span>
                   </div>
                 ))}
               </div>
             )}
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)',
               textAlign: 'center', marginTop: 8 }}>
-              Tap map to measure from tee · drag 🟢 to move pin
+              Drag map to measure · drag 🟢 to move pin
             </div>
           </div>
         )}
