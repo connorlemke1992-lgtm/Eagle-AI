@@ -16,7 +16,6 @@ async function fetchScorecardData(courseName) {
     const searchData = await searchRes.json()
     const course = searchData.courses?.[0]
     if (!course?.id) return null
-
     const courseRes = await fetch(
       `/api/golfcourseapi?endpoint=${encodeURIComponent(`courses/${course.id}`)}`
     )
@@ -25,6 +24,32 @@ async function fetchScorecardData(courseName) {
   } catch {
     return null
   }
+}
+
+function getPermanentCourses(q) {
+  const permanent = []
+  try {
+    // Check all permanent_ keys in localStorage
+    Object.keys(localStorage)
+      .filter(k => k.startsWith('permanent_'))
+      .forEach(k => {
+        const d = JSON.parse(localStorage.getItem(k))
+        if (!d?.course) return
+        const name = d.course.club_name?.toLowerCase() || ''
+        const city = d.course.location?.city?.toLowerCase() || ''
+        if (name.includes(q) || city.includes(q)) {
+          permanent.push({
+            id: k,
+            club_name: d.course.club_name,
+            location: d.course.location,
+            isLocal: false,
+            isPermanent: true,
+            fullData: d,
+          })
+        }
+      })
+  } catch {}
+  return permanent
 }
 
 export default function CourseSearch({ onCourseSelect }) {
@@ -47,6 +72,10 @@ export default function CourseSearch({ onCourseSelect }) {
       setError('')
 
       const q = val.toLowerCase()
+
+      // Check permanent cached courses first
+      const permanentResults = getPermanentCourses(q)
+
       const localResults = localCourses.filter(c =>
         c.club_name.toLowerCase().includes(q) ||
         c.location.city.toLowerCase().includes(q)
@@ -80,15 +109,18 @@ export default function CourseSearch({ onCourseSelect }) {
         }))
 
         const combined = [
+          ...permanentResults,
           ...localResults,
-          ...apiResults.filter(a => !localResults.find(l =>
-            l.club_name?.toLowerCase() === a.club_name?.toLowerCase()
-          ))
+          ...apiResults.filter(a =>
+            !localResults.find(l => l.club_name?.toLowerCase() === a.club_name?.toLowerCase()) &&
+            !permanentResults.find(p => p.club_name?.toLowerCase() === a.club_name?.toLowerCase())
+          )
         ]
         setResults(combined)
-      } catch (err) {
-        setResults(localResults)
-        if (localResults.length === 0) {
+      } catch {
+        const combined = [...permanentResults, ...localResults]
+        setResults(combined)
+        if (combined.length === 0) {
           setError('Could not search courses — check your connection')
         }
       }
@@ -97,6 +129,14 @@ export default function CourseSearch({ onCourseSelect }) {
   }
 
   async function selectCourse(course) {
+    // Handle permanently cached courses
+    if (course.isPermanent) {
+      setPendingCourse({ ...course, builtData: course.fullData })
+      setSelectedTeeIndex(0)
+      setShowTeeSelector(true)
+      return
+    }
+
     if (course.isLocal) {
       setPendingCourse({ ...course, isLocal: true })
       setShowTeeSelector(true)
@@ -135,7 +175,6 @@ export default function CourseSearch({ onCourseSelect }) {
 
       const courseData = await courseRes.json()
       const coordData = await coordRes.json()
-
       const scorecard = await fetchScorecardData(course.club_name)
 
       const tees = courseData.course?.tees || courseData.tees || []
@@ -162,7 +201,7 @@ export default function CourseSearch({ onCourseSelect }) {
       localStorage.setItem(cacheKey, JSON.stringify(builtCourse))
       setPendingCourse({ ...course, builtData: builtCourse })
       setShowTeeSelector(true)
-    } catch(e) {
+    } catch {
       setError('Could not load course data — try again')
     }
     setLoading(false)
@@ -171,7 +210,7 @@ export default function CourseSearch({ onCourseSelect }) {
   function confirmTeeSelection() {
     if (!pendingCourse) return
 
-    if (pendingCourse.isLocal) {
+    if (pendingCourse.isLocal && !pendingCourse.isPermanent) {
       const data = {
         ...pendingCourse.fullData,
         selectedTee: 2,
@@ -204,10 +243,7 @@ export default function CourseSearch({ onCourseSelect }) {
 
       const holes = Array.from({ length: 18 }, (_, i) => {
         const n = i + 1
-        const yardage =
-          chosenTee?.[`length${n}`] ||
-          chosenTee?.[`Length${n}`] ||
-          0
+        const yardage = chosenTee?.[`length${n}`] || chosenTee?.[`Length${n}`] || 0
         const scorecardHole = scorecardHoles?.[i]
         const par = scorecardHole?.par || null
         const handicap = scorecardHole?.handicap || null
@@ -239,7 +275,7 @@ export default function CourseSearch({ onCourseSelect }) {
 
   if (showTeeSelector && pendingCourse) {
     const tees = pendingCourse.builtData?.course?.tees || []
-    const isGolfAPI = pendingCourse.builtData?.course?.isGolfAPI
+    const isGolfAPI = !pendingCourse.isLocal || pendingCourse.isPermanent
 
     return (
       <div style={{ padding: 16 }}>
@@ -256,8 +292,7 @@ export default function CourseSearch({ onCourseSelect }) {
         </div>
 
         {isGolfAPI && tees.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10,
-            marginBottom: 24 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
             {tees.map((tee, i) => {
               const totalYards = Array.from({ length: 18 }, (_, j) =>
                 tee[`length${j + 1}`] || tee[`Length${j + 1}`] || 0
@@ -269,36 +304,29 @@ export default function CourseSearch({ onCourseSelect }) {
                     border: selectedTeeIndex === i
                       ? '2px solid var(--g3)' : '1px solid var(--bd)',
                     borderRadius: 14, padding: '16px 18px', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: 14,
-                    textAlign: 'left' }}>
+                    display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left' }}>
                   <div style={{ width: 32, height: 32, borderRadius: '50%',
                     background: tee.teeColor || '#888',
-                    border: '2px solid rgba(0,0,0,0.2)',
-                    flexShrink: 0 }} />
+                    border: '2px solid rgba(0,0,0,0.2)', flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 16, fontWeight: 700,
-                      color: selectedTeeIndex === i ? '#fff' : 'var(--tx)',
-                      marginBottom: 2 }}>
+                      color: selectedTeeIndex === i ? '#fff' : 'var(--tx)', marginBottom: 2 }}>
                       {tee.teeName} Tees
                     </div>
                     <div style={{ fontSize: 12,
-                      color: selectedTeeIndex === i
-                        ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>
+                      color: selectedTeeIndex === i ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>
                       {totalYards > 0 ? `${totalYards.toLocaleString()} yards` : ''}
                       {tee.courseRatingMen ? ` · Rating ${tee.courseRatingMen}` : ''}
                       {tee.slopeMen ? ` · Slope ${tee.slopeMen}` : ''}
                     </div>
                   </div>
-                  {selectedTeeIndex === i && (
-                    <div style={{ fontSize: 20 }}>✅</div>
-                  )}
+                  {selectedTeeIndex === i && <div style={{ fontSize: 20 }}>✅</div>}
                 </button>
               )
             })}
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10,
-            marginBottom: 24 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
             {TEE_OPTIONS.map(tee => (
               <button key={tee.sideFW}
                 onClick={() => setSelectedTeeIndex(tee.sideFW - 1)}
@@ -307,24 +335,17 @@ export default function CourseSearch({ onCourseSelect }) {
                   border: selectedTeeIndex === tee.sideFW - 1
                     ? '2px solid var(--g3)' : '1px solid var(--bd)',
                   borderRadius: 14, padding: '16px 18px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 14,
-                  textAlign: 'left' }}>
+                  display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left' }}>
                 <div style={{ fontSize: 32 }}>{tee.icon}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 16, fontWeight: 700,
                     color: selectedTeeIndex === tee.sideFW - 1 ? '#fff' : 'var(--tx)',
-                    marginBottom: 2 }}>
-                    {tee.label} Tees
-                  </div>
+                    marginBottom: 2 }}>{tee.label} Tees</div>
                   <div style={{ fontSize: 12,
                     color: selectedTeeIndex === tee.sideFW - 1
-                      ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>
-                    {tee.desc}
-                  </div>
+                      ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>{tee.desc}</div>
                 </div>
-                {selectedTeeIndex === tee.sideFW - 1 && (
-                  <div style={{ fontSize: 20 }}>✅</div>
-                )}
+                {selectedTeeIndex === tee.sideFW - 1 && <div style={{ fontSize: 20 }}>✅</div>}
               </button>
             ))}
           </div>
@@ -394,12 +415,12 @@ export default function CourseSearch({ onCourseSelect }) {
               <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--tx)',
                 display: 'flex', alignItems: 'center', gap: 6 }}>
                 {course.club_name}
-                {course.isLocal && (
+                {(course.isLocal || course.isPermanent) && (
                   <span style={{ fontSize: 10,
                     background: 'rgba(45,138,84,0.1)',
                     color: 'var(--g2)', padding: '2px 8px',
                     borderRadius: 10, fontWeight: 500 }}>
-                    Local ⚡
+                    {course.isPermanent ? 'Saved ⚡' : 'Local ⚡'}
                   </span>
                 )}
               </div>
