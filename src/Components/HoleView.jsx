@@ -81,7 +81,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const shotLinesRef = useRef([])
   const shotMarkersRef = useRef([])
   const infoWindowRef = useRef(null)
-  const measureStartRef = useRef(null)
   const pinPulseRef = useRef(null)
   const shotModeRef = useRef('idle')
   const distanceLineRef = useRef(null)
@@ -98,7 +97,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const [selectedTee, setSelectedTee] = useState(() =>
     parseInt(localStorage.getItem('selected_tee') || '2')
   )
-  const [pinPosition, setPinPosition] = useState('middle') // front | middle | back
+  const [pinPosition, setPinPosition] = useState('middle')
   const [showPinPrompt, setShowPinPrompt] = useState(false)
   const [visitedHoles, setVisitedHoles] = useState(() => {
     try { return JSON.parse(localStorage.getItem('visited_holes') || '[]') }
@@ -108,7 +107,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const [shotStart, setShotStart] = useState(null)
   const [pendingShot, setPendingShot] = useState(null)
   const [showClubPicker, setShowClubPicker] = useState(false)
-  const [showShotHistory, setShowShotHistory] = useState(false)
   const [eagleAnalysis, setEagleAnalysis] = useState('')
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [showDrawer, setShowDrawer] = useState(false)
@@ -126,7 +124,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const hPar = h?.par || null
   const hHcp = h?.handicap || h?.hcp || null
   const holeShots = shotHistory.filter(s => s.hole === currentHole + 1)
-  const teeLabel = courseData?.course?.selectedTeeLabel || 'Middle'
 
   const adjustedDistToPin = distanceToPin
     ? adjustYardsForElevation(distanceToPin, playerElevation, pinElevation)
@@ -135,7 +132,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     ? Math.round((pinElevation - playerElevation) * 3.281)
     : null
 
-  // Calculate distances to front/mid/back when player moves
   useEffect(() => {
     if (!playerPos || !coordinates.length) return
     const hc = getHoleCoordinates(coordinates, currentHole + 1, selectedTee)
@@ -150,7 +146,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     }
     if (hc.greenBack) {
       setBackDist(haversineYards(playerPos.lat, playerPos.lng,
-        parseFloat(hc.greenCenter.latitude), parseFloat(hc.greenCenter.longitude)))
+        parseFloat(hc.greenBack.latitude), parseFloat(hc.greenBack.longitude)))
     }
   }, [playerPos, currentHole, coordinates])
 
@@ -172,7 +168,6 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
         }, title: 'You'
       })
     }
-    // Update distance line from player to pin
     updateDistanceLine()
   }, [playerPos])
 
@@ -230,16 +225,13 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
 
   function getPinCoords(position, holeIndex) {
     const hc = getHoleCoordinates(coordinates, holeIndex + 1, selectedTee)
-    if (hc?.all) {
-      const front = hc.greenFront
-      const center = hc.greenCenter
-      const back = hc.greenBack
-      if (position === 'front' && front)
-        return { lat: parseFloat(front.latitude), lng: parseFloat(front.longitude) }
-      if (position === 'middle' && center)
-        return { lat: parseFloat(center.latitude), lng: parseFloat(center.longitude) }
-      if (position === 'back' && back)
-        return { lat: parseFloat(back.latitude), lng: parseFloat(back.longitude) }
+    if (hc) {
+      if (position === 'front' && hc.greenFront)
+        return { lat: parseFloat(hc.greenFront.latitude), lng: parseFloat(hc.greenFront.longitude) }
+      if (position === 'middle' && hc.greenCenter)
+        return { lat: parseFloat(hc.greenCenter.latitude), lng: parseFloat(hc.greenCenter.longitude) }
+      if (position === 'back' && hc.greenBack)
+        return { lat: parseFloat(hc.greenBack.latitude), lng: parseFloat(hc.greenBack.longitude) }
     }
     const green = getGreenCoords(holeIndex)
     const offsets = {
@@ -447,7 +439,6 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     const greenCoords = getGreenCoords(currentHole)
     const hc = getHoleCoordinates(coordinates, currentHole + 1, selectedTee)
 
-    // Tee marker
     teeMarkerRef.current = new window.google.maps.Marker({
       position: teeCoords, map,
       icon: {
@@ -459,7 +450,6 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
       label: { text: 'T', color: '#333', fontSize: '9px', fontWeight: 'bold' }
     })
 
-    // Pin marker
     pinMarkerRef.current = new window.google.maps.Marker({
       position: greenCoords, map, draggable: true,
       icon: {
@@ -475,11 +465,10 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
       updateDistanceLine()
     })
 
-    // Front of green marker
     if (hc?.greenFront) {
-      const frontCoords = { lat: parseFloat(hc.greenFront.latitude), lng: parseFloat(hc.greenFront.longitude) }
       frontMarkerRef.current = new window.google.maps.Marker({
-        position: frontCoords, map,
+        position: { lat: parseFloat(hc.greenFront.latitude), lng: parseFloat(hc.greenFront.longitude) },
+        map,
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
           scale: 6, fillColor: '#fbbf24', fillOpacity: 0.9,
@@ -490,11 +479,10 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
       })
     }
 
-    // Back of green marker
     if (hc?.greenBack) {
-      const backCoords = { lat: parseFloat(hc.greenBack.latitude), lng: parseFloat(hc.greenBack.longitude) }
       backMarkerRef.current = new window.google.maps.Marker({
-        position: backCoords, map,
+        position: { lat: parseFloat(hc.greenBack.latitude), lng: parseFloat(hc.greenBack.longitude) },
+        map,
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
           scale: 6, fillColor: '#f97316', fillOpacity: 0.9,
@@ -505,7 +493,6 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
       })
     }
 
-    // Hazards
     if (hc?.hazards?.length) {
       hc.hazards.forEach(hazard => {
         const marker = new window.google.maps.Marker({
@@ -533,9 +520,9 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
       measureMarkersRef.current = []
       if (measureLineRef.current) measureLineRef.current.setMap(null)
 
-     const refPoint = getTeeCoords(currentHole)
+      const refPoint = getTeeCoords(currentHole)
       const rawDist = haversineYards(
-        refPoint.lat, refPoint.lng || refPoint.lng,
+        refPoint.lat, refPoint.lng,
         e.latLng.lat(), e.latLng.lng()
       )
 
@@ -546,17 +533,14 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
         : null
       const club = bestClub(adjDist, bag)
 
-      // Draw line from player (or tap start) to tapped point
-      const teeStart = getTeeCoords(currentHole)
-measureLineRef.current = new window.google.maps.Polyline({
-  path: [teeStart, e.latLng],
-          geodesic: true, strokeColor: '#ffcc00',
-          strokeOpacity: 0.9, strokeWeight: 2,
-          icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
-            offset: '0', repeat: '15px' }],
-          map,
-        })
-      }
+      measureLineRef.current = new window.google.maps.Polyline({
+        path: [refPoint, e.latLng],
+        geodesic: true, strokeColor: '#ffcc00',
+        strokeOpacity: 0.9, strokeWeight: 2,
+        icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
+          offset: '0', repeat: '15px' }],
+        map,
+      })
 
       const endM = new window.google.maps.Marker({
         position: e.latLng, map,
@@ -627,7 +611,6 @@ measureLineRef.current = new window.google.maps.Polyline({
   return (
     <div style={{ position: 'relative', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
 
-      {/* Full screen map */}
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
       {/* Top hole info bar */}
@@ -640,7 +623,6 @@ measureLineRef.current = new window.google.maps.Polyline({
             style={{ background: 'rgba(255,255,255,0.1)', border: 'none',
               borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
               color: '#fff', fontSize: 16, opacity: currentHole === 0 ? 0.3 : 1 }}>←</button>
-
           <div style={{ textAlign: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, justifyContent: 'center' }}>
               <div style={{ fontFamily: 'Bebas Neue', fontSize: 28, color: '#fff', lineHeight: 1 }}>
@@ -651,12 +633,10 @@ measureLineRef.current = new window.google.maps.Polyline({
                 {hHcp ? ` · Hcp ${hHcp}` : ''}
               </div>
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)',
-              marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
               {courseData?.course?.club_name || ''}
             </div>
           </div>
-
           <button onClick={() => setCurrentHole(Math.min(17, currentHole + 1))}
             disabled={currentHole >= 17}
             style={{ background: 'rgba(255,255,255,0.1)', border: 'none',
@@ -665,18 +645,16 @@ measureLineRef.current = new window.google.maps.Polyline({
         </div>
       </div>
 
-      {/* Front / Mid / Back distance selector */}
+      {/* Front / Mid / Back selector */}
       {(frontDist || midDist || backDist || playerPos) && (
         <div style={{ position: 'absolute', top: 78, left: '50%',
-          transform: 'translateX(-50%)', zIndex: 10,
-          display: 'flex', gap: 6 }}>
+          transform: 'translateX(-50%)', zIndex: 10, display: 'flex', gap: 6 }}>
           {[
-            { key: 'front', label: 'Front', dist: frontDist, color: '#fbbf24' },
-            { key: 'middle', label: 'Mid', dist: midDist, color: '#4ade80' },
-            { key: 'back', label: 'Back', dist: backDist, color: '#f97316' },
+            { key: 'front', label: 'Front', dist: frontDist },
+            { key: 'middle', label: 'Mid', dist: midDist },
+            { key: 'back', label: 'Back', dist: backDist },
           ].map(p => (
-            <button key={p.key}
-              onClick={() => selectPinPosition(p.key)}
+            <button key={p.key} onClick={() => selectPinPosition(p.key)}
               style={{ background: pinPosition === p.key
                 ? 'rgba(74,222,128,0.9)' : 'rgba(15,30,20,0.85)',
                 border: pinPosition === p.key ? '2px solid #4ade80' : '1px solid rgba(255,255,255,0.2)',
@@ -687,8 +665,7 @@ measureLineRef.current = new window.google.maps.Polyline({
                 textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 {p.label}
               </div>
-              <div style={{ fontSize: 20, fontWeight: 800,
-                fontFamily: 'Bebas Neue',
+              <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'Bebas Neue',
                 color: pinPosition === p.key ? '#1a3a2a' : (p.dist ? '#fff' : 'rgba(255,255,255,0.3)') }}>
                 {p.dist || '—'}
               </div>
@@ -699,7 +676,7 @@ measureLineRef.current = new window.google.maps.Polyline({
         </div>
       )}
 
-      {/* Pin prompt overlay */}
+      {/* Pin prompt */}
       {showPinPrompt && (
         <div style={{ position: 'absolute', top: '50%', left: '50%',
           transform: 'translate(-50%, -50%)', zIndex: 20,
@@ -784,12 +761,9 @@ measureLineRef.current = new window.google.maps.Polyline({
           transform: 'translateX(-50%)', zIndex: 10,
           background: 'rgba(15,30,20,0.92)', borderRadius: 14,
           padding: '8px 20px', backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(74,222,128,0.2)',
-          textAlign: 'center' }}>
+          border: '1px solid rgba(74,222,128,0.2)', textAlign: 'center' }}>
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)',
-            textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-            To Pin
-          </div>
+            textTransform: 'uppercase', letterSpacing: '0.07em' }}>To Pin</div>
           <div style={{ fontSize: 36, fontWeight: 800,
             fontFamily: 'Bebas Neue', color: '#4ade80', lineHeight: 1 }}>
             {activeDistToPin}y
@@ -815,7 +789,8 @@ measureLineRef.current = new window.google.maps.Polyline({
 
       {/* Eagle analysis */}
       {(eagleAnalysis || analysisLoading) && (
-        <div style={{ position: 'absolute', top: shotMode === 'waiting_for_ball' ? 185 : 130,
+        <div style={{ position: 'absolute',
+          top: shotMode === 'waiting_for_ball' ? 185 : 130,
           left: 16, right: 16, zIndex: 10,
           background: 'rgba(15,30,20,0.92)', borderRadius: 12,
           padding: 14, backdropFilter: 'blur(8px)',
@@ -835,7 +810,7 @@ measureLineRef.current = new window.google.maps.Polyline({
         </div>
       )}
 
-      {/* Club picker overlay */}
+      {/* Club picker */}
       {showClubPicker && pendingShot && (
         <div style={{ position: 'absolute', top: '50%', left: '50%',
           transform: 'translate(-50%, -50%)', zIndex: 20,
@@ -885,10 +860,7 @@ measureLineRef.current = new window.google.maps.Polyline({
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
         zIndex: 10, background: 'rgba(15,30,20,0.92)',
         backdropFilter: 'blur(8px)', padding: '10px 16px' }}>
-
-        {/* Shot tracking */}
-        <div style={{ display: 'grid',
-          gridTemplateColumns: shotMode === 'waiting_for_ball' ? '1fr 1fr' : '1fr 1fr',
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr',
           gap: 8, marginBottom: 8 }}>
           {shotMode === 'idle' ? (
             <>
@@ -927,7 +899,6 @@ measureLineRef.current = new window.google.maps.Polyline({
           )}
         </div>
 
-        {/* Drawer */}
         {showDrawer && (
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -953,7 +924,8 @@ measureLineRef.current = new window.google.maps.Polyline({
                 {holeShots.map((shot, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
                     padding: '4px 0', fontSize: 12, color: 'rgba(255,255,255,0.7)',
-                    borderBottom: i < holeShots.length - 1 ? '1px solid rgba(255,255,255,0.07)' : 'none' }}>
+                    borderBottom: i < holeShots.length - 1
+                      ? '1px solid rgba(255,255,255,0.07)' : 'none' }}>
                     <span>Shot {i + 1} — {shot.club}</span>
                     <span style={{ color: '#4ade80', fontWeight: 600 }}>{shot.distance}y</span>
                   </div>
@@ -962,7 +934,7 @@ measureLineRef.current = new window.google.maps.Polyline({
             )}
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)',
               textAlign: 'center', marginTop: 8 }}>
-              Tap map to measure · drag 🟢 to move pin
+              Tap map to measure from tee · drag 🟢 to move pin
             </div>
           </div>
         )}
