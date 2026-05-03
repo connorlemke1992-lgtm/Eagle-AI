@@ -533,7 +533,7 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
       measureMarkersRef.current = []
       if (measureLineRef.current) measureLineRef.current.setMap(null)
 
-      const refPoint = playerPos || { lat: e.latLng.lat(), lng: e.latLng.lng() }
+     const refPoint = getTeeCoords(currentHole)
       const rawDist = haversineYards(
         refPoint.lat, refPoint.lng || refPoint.lng,
         e.latLng.lat(), e.latLng.lng()
@@ -547,9 +547,9 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
       const club = bestClub(adjDist, bag)
 
       // Draw line from player (or tap start) to tapped point
-      if (playerPos) {
-        measureLineRef.current = new window.google.maps.Polyline({
-          path: [playerPos, e.latLng],
+      const teeStart = getTeeCoords(currentHole)
+measureLineRef.current = new window.google.maps.Polyline({
+  path: [teeStart, e.latLng],
           geodesic: true, strokeColor: '#ffcc00',
           strokeOpacity: 0.9, strokeWeight: 2,
           icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
