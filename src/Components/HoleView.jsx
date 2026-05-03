@@ -83,7 +83,8 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const shotModeRef = useRef('idle')
   const distanceLineRef = useRef(null)
   const crosshairLineRef = useRef(null)
-  const crosshairMarkerRef = useRef(null)
+  const holeShotsRef = useRef([])
+  const playerPosRef = useRef(null)
 
   const [courseData, setCourseData] = useState(() => {
     try {
@@ -119,7 +120,8 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
                 courseData?.course?.tees?.male?.[0]?.holes ||
                 courseData?.course?.tees?.female?.[0]?.holes || []
   const h = holes[currentHole]
-  const hYards = h?.yardage || h?.yards || courseData?.course?.chosenTee?.[`length${currentHole + 1}`] || null
+  const hYards = h?.yardage || h?.yards ||
+    courseData?.course?.chosenTee?.[`length${currentHole + 1}`] || null
   const hPar = h?.par || null
   const hHcp = h?.handicap || h?.hcp || null
   const holeShots = shotHistory.filter(s => s.hole === currentHole + 1)
@@ -130,6 +132,15 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const elevDiff = (playerElevation && pinElevation)
     ? Math.round((pinElevation - playerElevation) * 3.281)
     : null
+
+  // Keep refs in sync so map listeners can access latest values
+  useEffect(() => {
+    holeShotsRef.current = holeShots
+  }, [holeShots])
+
+  useEffect(() => {
+    playerPosRef.current = playerPos
+  }, [playerPos])
 
   useEffect(() => {
     if (!playerPos || !coordinates.length) return
@@ -168,6 +179,9 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
       })
     }
     updateDistanceLine()
+    if (mapInstanceRef.current) {
+      updateCrosshairDistance(mapInstanceRef.current)
+    }
   }, [playerPos])
 
   useEffect(() => {
@@ -182,6 +196,10 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
 
   useEffect(() => {
     if (mapInstanceRef.current) drawShotLines()
+    // Update crosshair when shots change
+    if (mapInstanceRef.current) {
+      updateCrosshairDistance(mapInstanceRef.current)
+    }
   }, [shotHistory, currentHole])
 
   function updateDistanceLine() {
@@ -396,6 +414,40 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     document.head.appendChild(script)
   }
 
+  function updateCrosshairDistance(map) {
+    if (!map) return
+    const center = map.getCenter()
+    if (!center) return
+
+    const centerLat = center.lat()
+    const centerLng = center.lng()
+
+    const teeCoords = getTeeCoords(currentHole)
+    const currentPlayerPos = playerPosRef.current
+    const currentHoleShots = holeShotsRef.current
+
+    // Use player GPS after first shot on this hole, otherwise tee box
+    const refPoint = (currentHoleShots.length > 0 && currentPlayerPos)
+      ? currentPlayerPos
+      : teeCoords
+
+    const dist = haversineYards(refPoint.lat, refPoint.lng, centerLat, centerLng)
+    const club = bestClub(dist, bag)
+
+    setCrosshairDist(dist)
+    setCrosshairClub(club)
+
+    if (crosshairLineRef.current) crosshairLineRef.current.setMap(null)
+    crosshairLineRef.current = new window.google.maps.Polyline({
+      path: [refPoint, { lat: centerLat, lng: centerLng }],
+      geodesic: true, strokeColor: '#ffcc00',
+      strokeOpacity: 0.85, strokeWeight: 2,
+      icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
+        offset: '0', repeat: '12px' }],
+      map,
+    })
+  }
+
   function initMap() {
     if (!mapRef.current) return
     const teeCoords = getTeeCoords(currentHole)
@@ -412,12 +464,7 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     infoWindowRef.current = new window.google.maps.InfoWindow()
     placeHoleMarkers(map)
 
-    // Crosshair drag listener — updates distance as map moves
     map.addListener('center_changed', () => {
-      updateCrosshairDistance(map)
-    })
-
-    map.addListener('idle', () => {
       updateCrosshairDistance(map)
     })
 
@@ -434,35 +481,6 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     drawShotLines()
     setTimeout(() => updateDistanceLine(), 500)
     setTimeout(() => updateCrosshairDistance(map), 500)
-  }
-
-  function updateCrosshairDistance(map) {
-    if (!map) return
-    const center = map.getCenter()
-    if (!center) return
-
-    const centerLat = center.lat()
-    const centerLng = center.lng()
-
-    // Measure from player if available, else from tee
-    const teeCoords = getTeeCoords(currentHole)
-    const refPoint = playerPos || teeCoords
-    const dist = haversineYards(refPoint.lat, refPoint.lng, centerLat, centerLng)
-    const club = bestClub(dist, bag)
-
-    setCrosshairDist(dist)
-    setCrosshairClub(club)
-
-    // Draw line from ref point to crosshair
-    if (crosshairLineRef.current) crosshairLineRef.current.setMap(null)
-    crosshairLineRef.current = new window.google.maps.Polyline({
-      path: [refPoint, { lat: centerLat, lng: centerLng }],
-      geodesic: true, strokeColor: '#ffcc00',
-      strokeOpacity: 0.85, strokeWeight: 2,
-      icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
-        offset: '0', repeat: '12px' }],
-      map,
-    })
   }
 
   function placeHoleMarkers(map) {
@@ -586,23 +604,19 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
   return (
     <div style={{ position: 'relative', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
 
-      {/* Full screen map */}
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* Fixed crosshair in center */}
+      {/* Fixed crosshair */}
       <div style={{ position: 'absolute', top: '50%', left: '50%',
         transform: 'translate(-50%, -50%)',
         zIndex: 10, pointerEvents: 'none' }}>
         <div style={{ position: 'relative', width: 60, height: 60,
           display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {/* Outer circle */}
           <div style={{ position: 'absolute', width: 60, height: 60,
             borderRadius: '50%', border: '2px solid rgba(255,255,255,0.8)',
             boxShadow: '0 0 8px rgba(0,0,0,0.5)' }} />
-          {/* Inner dot */}
           <div style={{ width: 6, height: 6, borderRadius: '50%',
             background: '#fff', boxShadow: '0 0 4px rgba(0,0,0,0.8)' }} />
-          {/* Cross lines */}
           <div style={{ position: 'absolute', width: 20, height: 2,
             background: 'rgba(255,255,255,0.8)', left: -20, top: '50%',
             transform: 'translateY(-50%)' }} />
@@ -619,7 +633,7 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
 
         {/* Distance bubble next to crosshair */}
         {crosshairDist !== null && (
-          <div style={{ position: 'absolute', left: 40, top: '50%',
+          <div style={{ position: 'absolute', left: 44, top: '50%',
             transform: 'translateY(-50%)',
             background: 'rgba(15,30,20,0.92)', borderRadius: 10,
             padding: '6px 12px', backdropFilter: 'blur(8px)',
@@ -631,6 +645,9 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
             </div>
             <div style={{ fontSize: 11, color: '#4ade80', fontWeight: 600 }}>
               {crosshairClub?.name}
+            </div>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>
+              {holeShots.length > 0 ? 'from you' : 'from tee'}
             </div>
           </div>
         )}
@@ -649,12 +666,11 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
 
           <div style={{ textAlign: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center',
-              gap: 12, justifyContent: 'center' }}>
+              gap: 10, justifyContent: 'center' }}>
               <div style={{ fontFamily: 'Bebas Neue', fontSize: 24,
                 color: '#fff', lineHeight: 1 }}>
                 Hole {currentHole + 1}
               </div>
-              {/* Remaining distance to pin — always visible */}
               {activeDistToPin && (
                 <div style={{ background: 'rgba(74,222,128,0.2)',
                   border: '1px solid rgba(74,222,128,0.4)',
