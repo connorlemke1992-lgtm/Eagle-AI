@@ -86,6 +86,8 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const teeToPinLineRef = useRef(null)
   const crosshairLineRef = useRef(null)
   const crosshairToPinLineRef = useRef(null)
+  const aimMarkerRef = useRef(null)
+  const aimPointRef = useRef(null) // {lat, lng} once user has placed/dragged aim
   const holeShotsRef = useRef([])
   const playerPosRef = useRef(null)
 
@@ -458,12 +460,16 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
 
   function updateCrosshairDistance(map) {
     if (!map) return
-    const center = map.getCenter()
-    if (!center) return
+    // Use the user's dragged aim marker if they've placed one, otherwise
+    // fall back to the map's current center (the legacy pan-to-aim behavior).
+    const aimPoint = aimPointRef.current || (() => {
+      const c = map.getCenter()
+      return c ? { lat: c.lat(), lng: c.lng() } : null
+    })()
+    if (!aimPoint) return
 
-    const centerLat = center.lat()
-    const centerLng = center.lng()
-    const aimPoint = { lat: centerLat, lng: centerLng }
+    const centerLat = aimPoint.lat
+    const centerLng = aimPoint.lng
 
     const teeCoords = getTeeCoords(currentHole)
     const currentPlayerPos = playerPosRef.current
@@ -543,8 +549,10 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     if (teeMarkerRef.current) teeMarkerRef.current.setMap(null)
     if (frontMarkerRef.current) frontMarkerRef.current.setMap(null)
     if (backMarkerRef.current) backMarkerRef.current.setMap(null)
+    if (aimMarkerRef.current) aimMarkerRef.current.setMap(null)
     hazardMarkersRef.current.forEach(m => m.setMap(null))
     hazardMarkersRef.current = []
+    aimPointRef.current = null
 
     const teeCoords = getTeeCoords(currentHole)
     const greenCoords = getGreenCoords(currentHole)
@@ -619,6 +627,36 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
         hazardMarkersRef.current.push(marker)
       })
     }
+
+    // Draggable AIM marker — drop it anywhere on the hole to see distances
+    // from the tee (or your current position) to that spot, and the remaining
+    // distance from that spot to the pin. Starts halfway between tee and
+    // green so it's easy to grab; user drags wherever they want to study.
+    const aimStart = {
+      lat: (teeCoords.lat + greenCoords.lat) / 2,
+      lng: (teeCoords.lng + greenCoords.lng) / 2,
+    }
+    aimPointRef.current = aimStart
+    aimMarkerRef.current = new window.google.maps.Marker({
+      position: aimStart, map, draggable: true, zIndex: 999,
+      icon: {
+        path: window.google.maps.SymbolPath.CIRCLE,
+        scale: 11, fillColor: '#fbbf24', fillOpacity: 1,
+        strokeColor: '#1a3a2a', strokeWeight: 3,
+      },
+      title: 'Aim — drag anywhere on the hole to study distances',
+      label: { text: '🎯', fontSize: '14px' },
+    })
+    aimMarkerRef.current.addListener('drag', (e) => {
+      aimPointRef.current = { lat: e.latLng.lat(), lng: e.latLng.lng() }
+      updateCrosshairDistance(map)
+    })
+    aimMarkerRef.current.addListener('dragend', (e) => {
+      aimPointRef.current = { lat: e.latLng.lat(), lng: e.latLng.lng() }
+      updateCrosshairDistance(map)
+    })
+    // Initial distance calculation for the starting aim position.
+    setTimeout(() => updateCrosshairDistance(map), 100)
 
     setTimeout(() => startPinPulse(), 500)
   }
