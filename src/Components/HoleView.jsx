@@ -84,6 +84,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const distanceLineRef = useRef(null)
   const teeToPinLineRef = useRef(null)
   const crosshairLineRef = useRef(null)
+  const crosshairToPinLineRef = useRef(null)
   const holeShotsRef = useRef([])
   const playerPosRef = useRef(null)
 
@@ -114,6 +115,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const [backDist, setBackDist] = useState(null)
   const [crosshairDist, setCrosshairDist] = useState(null)
   const [crosshairClub, setCrosshairClub] = useState(null)
+  const [crosshairToPinDist, setCrosshairToPinDist] = useState(null)
   const bag = loadBag()
 
   const coordinates = courseData?.course?.coordinates || []
@@ -443,6 +445,7 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
 
     const centerLat = center.lat()
     const centerLng = center.lng()
+    const aimPoint = { lat: centerLat, lng: centerLng }
 
     const teeCoords = getTeeCoords(currentHole)
     const currentPlayerPos = playerPosRef.current
@@ -461,13 +464,32 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
 
     if (crosshairLineRef.current) crosshairLineRef.current.setMap(null)
     crosshairLineRef.current = new window.google.maps.Polyline({
-      path: [refPoint, { lat: centerLat, lng: centerLng }],
+      path: [refPoint, aimPoint],
       geodesic: true, strokeColor: '#ffcc00',
       strokeOpacity: 0.85, strokeWeight: 2,
       icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
         offset: '0', repeat: '12px' }],
       map,
     })
+
+    // Second leg: from the aim point to the pin, so you can see "if I land
+    // here, what's left in." Drawn in red so it's clearly different from
+    // the yellow tee→aim leg.
+    if (crosshairToPinLineRef.current) crosshairToPinLineRef.current.setMap(null)
+    if (pinPos) {
+      const remaining = haversineYards(centerLat, centerLng, pinPos.lat, pinPos.lng)
+      setCrosshairToPinDist(remaining)
+      crosshairToPinLineRef.current = new window.google.maps.Polyline({
+        path: [aimPoint, pinPos],
+        geodesic: true, strokeColor: '#ef4444',
+        strokeOpacity: 0.85, strokeWeight: 2,
+        icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
+          offset: '0', repeat: '12px' }],
+        map,
+      })
+    } else {
+      setCrosshairToPinDist(null)
+    }
   }
 
   function initMap() {
@@ -598,8 +620,10 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     if (distanceLineRef.current) distanceLineRef.current.setMap(null)
     if (teeToPinLineRef.current) teeToPinLineRef.current.setMap(null)
     if (crosshairLineRef.current) crosshairLineRef.current.setMap(null)
+    if (crosshairToPinLineRef.current) crosshairToPinLineRef.current.setMap(null)
     setCrosshairDist(null)
     setCrosshairClub(null)
+    setCrosshairToPinDist(null)
     setShotMode('idle')
     shotModeRef.current = 'idle'
     setShotStart(null)
@@ -672,6 +696,13 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
             <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>
               {holeShots.length > 0 ? 'from you' : 'from tee'}
             </div>
+            {crosshairToPinDist !== null && (
+              <div style={{ marginTop: 6, paddingTop: 6,
+                borderTop: '1px solid rgba(255,255,255,0.15)',
+                fontSize: 11, color: '#fca5a5', fontWeight: 700 }}>
+                → {crosshairToPinDist}y to pin
+              </div>
+            )}
           </div>
         )}
       </div>
