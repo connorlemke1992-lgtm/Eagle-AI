@@ -186,20 +186,31 @@ export default function CourseSearch({ onCourseSelect }) {
     console.log('[golfapi] picked club:', bestClub.clubName, 'clubID:', clubID)
     if (!clubID) return null
 
-    // Step 2 — fetch club details to get its courses[] array.
+    // Step 2 — fetch club details to get its courses[] array. The clubs/{id}
+    // response includes a `courses` array; we want the first course's ID.
     const club = await goAndLog(`clubs/${clubID}`, 'club detail')
-    const courses = club?.courses || []
-    if (!courses.length) {
-      console.warn('[golfapi] club has no courses')
+    const clubCourses = club?.courses || []
+    let courseID = clubCourses[0]?.courseID || clubCourses[0]?.id
+
+    // Some clubs return courses in a separate field, or only return the
+    // course ID list. If we didn't find one, try the courses?clubID= variant.
+    if (!courseID) {
+      const list = await goAndLog(`courses?clubID=${clubID}`, 'courses by clubID')
+      const items = list?.courses || (Array.isArray(list) ? list : [])
+      courseID = items[0]?.courseID || items[0]?.id
+    }
+    if (!courseID) {
+      console.warn('[golfapi] no courseID found for clubID', clubID)
       return null
     }
-    const courseID = courses[0].courseID || courses[0].id
-    console.log('[golfapi] using course:', courses[0].courseName, 'courseID:', courseID)
-    if (!courseID) return null
+    console.log('[golfapi] using courseID:', courseID)
 
-    // Step 3 — fetch the course, which contains the coordinates array.
-    const course = await goAndLog(`courses/${courseID}`, 'course')
-    const coords = course?.coordinates || []
+    // Step 3 — fetch the dedicated coordinates endpoint for this course.
+    // /courses/{id} returns metadata only (address, phone, etc); the actual
+    // POI coordinates live on a separate /coordinates/{courseID} endpoint.
+    const coordsResp = await goAndLog(`coordinates/${courseID}`, 'coordinates')
+    const coords = coordsResp?.coordinates ||
+                   (Array.isArray(coordsResp) ? coordsResp : [])
     console.log('[golfapi] got', coords.length, 'coordinates')
     return coords.length ? coords : null
   }
