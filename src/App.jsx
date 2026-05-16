@@ -148,6 +148,11 @@ export default function App() {
       }
       console.log('[snap] snapping player to tee of hole 1:', pos)
       setPlayerPos(pos)
+      // Clear the stale GPS altitude so the elevation effect re-fetches for
+      // the snapped position. Otherwise we keep using the user's home-phone
+      // altitude, which gives nonsense "to pin" adjustments at the course.
+      setPlayerElevation(null)
+      lastElevationFetch.current = null
       return
     }
 
@@ -157,6 +162,8 @@ export default function App() {
       console.log('[snap] no hole 1 tee in coordinates, falling back to course center:',
         courseLat, courseLng)
       setPlayerPos({ lat: courseLat, lng: courseLng })
+      setPlayerElevation(null)
+      lastElevationFetch.current = null
     } else {
       console.warn('[snap] no coordinates AND no course location — cannot snap')
     }
