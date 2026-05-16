@@ -65,8 +65,9 @@ function getHoleCoordinates(coordinates, holeNumber, selectedTee = 2) {
 }
 
 export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
-  playerPos, pinPos, setPinPos, distanceToPin, showSearch, setShowSearch,
-  shotHistory = [], addShot, playerElevation, pinElevation, onSnapToTee }) {
+  playerPos, setPlayerPos, setPlayerElevation, pinPos, setPinPos,
+  distanceToPin, showSearch, setShowSearch, shotHistory = [], addShot,
+  playerElevation, pinElevation, onSnapToTee }) {
 
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
@@ -172,14 +173,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
     if (playerMarkerRef.current && playerPos) {
       playerMarkerRef.current.setPosition(playerPos)
     } else if (mapInstanceRef.current && playerPos && !playerMarkerRef.current) {
-      playerMarkerRef.current = new window.google.maps.Marker({
-        position: playerPos, map: mapInstanceRef.current,
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
-          strokeColor: '#fff', strokeWeight: 2,
-        }, title: 'You'
-      })
+      playerMarkerRef.current = makePlayerMarker(playerPos, mapInstanceRef.current)
     }
     updateDistanceLine()
     if (mapInstanceRef.current) {
@@ -204,6 +198,30 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
       updateCrosshairDistance(mapInstanceRef.current)
     }
   }, [shotHistory, currentHole])
+
+  // Build the draggable blue "You" marker. We drag-update playerPos so the
+  // user can simulate being anywhere on the course (e.g. "if I'm here in
+  // the fairway, what's my second shot?"). Resets elevation on drag so the
+  // "to pin" adjustment refetches for the new spot.
+  function makePlayerMarker(position, map) {
+    const marker = new window.google.maps.Marker({
+      position, map, draggable: true,
+      icon: {
+        path: window.google.maps.SymbolPath.CIRCLE,
+        scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
+        strokeColor: '#fff', strokeWeight: 2,
+      },
+      title: 'You — drag to simulate any position',
+    })
+    marker.addListener('dragend', (e) => {
+      const next = { lat: e.latLng.lat(), lng: e.latLng.lng() }
+      if (setPlayerPos) setPlayerPos(next)
+      if (setPlayerElevation) setPlayerElevation(null)
+      updateDistanceLine()
+      updateCrosshairDistance(map)
+    })
+    return marker
+  }
 
   function updateDistanceLine() {
     if (!mapInstanceRef.current || !playerPos || !pinPos) return
@@ -513,14 +531,7 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     })
 
     if (playerPos) {
-      playerMarkerRef.current = new window.google.maps.Marker({
-        position: playerPos, map,
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 10, fillColor: '#60a5fa', fillOpacity: 1,
-          strokeColor: '#fff', strokeWeight: 2,
-        }, title: 'You'
-      })
+      playerMarkerRef.current = makePlayerMarker(playerPos, map)
     }
     drawShotLines()
     setTimeout(() => updateDistanceLine(), 500)

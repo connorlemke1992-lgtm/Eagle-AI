@@ -477,6 +477,8 @@ export default function App() {
             setCurrentHole={setCurrentHole}
             onCourseSelect={handleCourseSelect}
             playerPos={playerPos}
+            setPlayerPos={setPlayerPos}
+            setPlayerElevation={setPlayerElevation}
             pinPos={pinPos}
             setPinPos={setPinPos}
             distanceToPin={distanceToPin}
