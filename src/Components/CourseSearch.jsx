@@ -7,29 +7,21 @@ const TEE_OPTIONS = [
   { label: 'Forward', desc: 'Senior / Ladies', icon: '🟡', sideFW: 3 },
 ]
 
-async function fetchScorecardData(courseName) {
-  try {
-    const shortName = courseName.split(' ').slice(0, 2).join(' ')
-    const searchRes = await fetch(
-      `/api/golfcourseapi?endpoint=${encodeURIComponent(`search?search_query=${shortName}`)}`
-    )
-    const searchData = await searchRes.json()
-    const course = searchData.courses?.[0]
-    if (!course?.id) return null
-    const courseRes = await fetch(
-      `/api/golfcourseapi?endpoint=${encodeURIComponent(`courses/${course.id}`)}`
-    )
-    const courseData = await courseRes.json()
-    return courseData.course
-  } catch {
-    return null
-  }
+function getTeeColor(name) {
+  const n = (name || '').toLowerCase()
+  if (n.includes('black')) return '#1a1a1a'
+  if (n.includes('gold') || n.includes('yellow')) return '#c9a227'
+  if (n.includes('blue')) return '#2563eb'
+  if (n.includes('white')) return '#e5e7eb'
+  if (n.includes('red')) return '#dc2626'
+  if (n.includes('silver') || n.includes('grey') || n.includes('gray')) return '#9ca3af'
+  if (n.includes('green')) return '#16a34a'
+  return '#888888'
 }
 
 function getPermanentCourses(q) {
   const permanent = []
   try {
-    // Check all permanent_ keys in localStorage
     Object.keys(localStorage)
       .filter(k => k.startsWith('permanent_'))
       .forEach(k => {
@@ -72,10 +64,7 @@ export default function CourseSearch({ onCourseSelect }) {
       setError('')
 
       const q = val.toLowerCase()
-
-      // Check permanent cached courses first
       const permanentResults = getPermanentCourses(q)
-
       const localResults = localCourses.filter(c =>
         c.club_name.toLowerCase().includes(q) ||
         c.location.city.toLowerCase().includes(q)
@@ -84,28 +73,20 @@ export default function CourseSearch({ onCourseSelect }) {
         club_name: c.club_name,
         location: c.location,
         isLocal: true,
-        fullData: c
+        fullData: c,
       }))
 
       try {
-        const endpoint = encodeURIComponent(
-          `clubs?name=${encodeURIComponent(val)}&country=usa`
+        const res = await fetch(
+          `/api/golfcourseapi?endpoint=${encodeURIComponent(`search?search_query=${val}`)}`
         )
-        const res = await fetch(`/api/golfapi?endpoint=${endpoint}`)
         const data = await res.json()
-
-        const apiResults = (data.clubs || []).map(c => ({
-          id: c.clubID || c.id,
-          club_name: c.clubName || c.name || c.club_name,
-          location: {
-            city: c.city,
-            state: c.state,
-            country: c.country,
-            latitude: c.lat || c.latitude,
-            longitude: c.lng || c.longitude,
-          },
-          courses: c.courses || [],
+        const apiResults = (data.courses || []).map(c => ({
+          id: c.id,
+          club_name: c.club_name,
+          location: c.location,
           isLocal: false,
+          fullCourseData: c,
         }))
 
         const combined = [
@@ -120,16 +101,13 @@ export default function CourseSearch({ onCourseSelect }) {
       } catch {
         const combined = [...permanentResults, ...localResults]
         setResults(combined)
-        if (combined.length === 0) {
-          setError('Could not search courses — check your connection')
-        }
+        if (combined.length === 0) setError('Could not search courses — check your connection')
       }
       setLoading(false)
     }, 500)
   }
 
   async function selectCourse(course) {
-    // Handle permanently cached courses
     if (course.isPermanent) {
       setPendingCourse({ ...course, builtData: course.fullData })
       setSelectedTeeIndex(0)
@@ -143,68 +121,104 @@ export default function CourseSearch({ onCourseSelect }) {
       return
     }
 
+    const c = course.fullCourseData
+    const builtCourse = {
+      course: {
+        club_name: c.club_name,
+        location: c.location,
+        tees: c.tees || {},
+        coordinates: [],
+        isGolfCourseAPI: true,
+      }
+    }
+
+    // GolfCourseAPI gives us scorecard data but no GPS coordinates. Look the
+    // course up in golfapi.io (a different provider) by name to grab the tee
+    // box, green, and hazard coordinates so the map can show where you are
+    // on each hole. Wrapped in try/catch — if golfapi.io doesn't have this
+    // course, we just continue with no coordinates and the map falls back to
+    // estimated positions around the course location.
     setLoading(true)
-    setError('')
-
     try {
-      const cacheKey = `golfapi_course_${course.id}`
-      const cached = localStorage.getItem(cacheKey)
-      if (cached) {
-        setPendingCourse({ ...course, builtData: JSON.parse(cached) })
-        setShowTeeSelector(true)
-        setLoading(false)
-        return
-      }
-
-      const clubRes = await fetch(
-        `/api/golfapi?endpoint=${encodeURIComponent(`clubs/${course.id}`)}`
-      )
-      const clubData = await clubRes.json()
-
-      const coursesList = clubData.club?.courses ||
-                          clubData.courses ||
-                          course.courses || []
-      const courseId = coursesList[0]?.courseID ||
-                       coursesList[0]?.id ||
-                       course.id
-
-      const [courseRes, coordRes] = await Promise.all([
-        fetch(`/api/golfapi?endpoint=${encodeURIComponent(`courses/${courseId}`)}`),
-        fetch(`/api/golfapi?endpoint=${encodeURIComponent(`coordinates/${courseId}`)}`)
-      ])
-
-      const courseData = await courseRes.json()
-      const coordData = await coordRes.json()
-      const scorecard = await fetchScorecardData(course.club_name)
-
-      const tees = courseData.course?.tees || courseData.tees || []
-      const coordinates = coordData.course?.coordinates || coordData.coordinates || []
-      const lat = course.location?.latitude || clubData.club?.lat
-      const lng = course.location?.longitude || clubData.club?.lng
-
-      const builtCourse = {
-        course: {
-          club_name: course.club_name,
-          location: {
-            city: course.location?.city,
-            state: course.location?.state,
-            latitude: lat,
-            longitude: lng,
-          },
-          tees,
-          coordinates,
-          isGolfAPI: true,
-          scorecard,
-        }
-      }
-
-      localStorage.setItem(cacheKey, JSON.stringify(builtCourse))
-      setPendingCourse({ ...course, builtData: builtCourse })
-      setShowTeeSelector(true)
-    } catch {
-      setError('Could not load course data — try again')
+      const coords = await fetchCoordinates(c.club_name, c.location)
+      if (coords?.length) builtCourse.course.coordinates = coords
+    } catch (err) {
+      console.warn('[CourseSearch] coordinate lookup failed:', err)
     }
     setLoading(false)
+
+    localStorage.setItem(`golfapi_course_${course.id}`, JSON.stringify(builtCourse))
+    setPendingCourse({ ...course, builtData: builtCourse })
+    setSelectedTeeIndex(0)
+    setShowTeeSelector(true)
+  }
+
+  // Look this course up in golfapi.io and pull its POI coordinates. The API
+  // has three endpoints we chain together:
+  //   1) GET /clubs?name=...  → list of matching clubs
+  //   2) GET /clubs/{clubID}  → club details including a courses[] array
+  //   3) GET /courses/{courseID}  → full course data (includes coordinates)
+  // Wrapped in try/catch — if any step fails we just return null and the
+  // map falls back to estimated positions.
+  async function fetchCoordinates(name, location) {
+    if (!name) return null
+    console.log('[golfapi] looking up:', name, location)
+
+    // Step 1 — search clubs by name (optionally filtered by country).
+    const searchParams = new URLSearchParams({ name })
+    if (location?.country) searchParams.append('country', location.country)
+    const clubs = await goAndLog(`clubs?${searchParams.toString()}`, 'clubs')
+    const clubCandidates = clubs?.clubs || (Array.isArray(clubs) ? clubs : [])
+    if (!clubCandidates.length) {
+      console.warn('[golfapi] no club matches for', name)
+      return null
+    }
+
+    // Prefer a candidate in the same city/state if we know one — disambiguates
+    // common names like "Saddleback" that exist in multiple states.
+    const wantCity = location?.city?.toLowerCase()
+    const wantState = location?.state?.toLowerCase()
+    const bestClub = clubCandidates.find(c => {
+      const cCity = (c.city || c.clubCity || '').toLowerCase()
+      const cState = (c.state || c.clubState || '').toLowerCase()
+      return wantCity && cCity === wantCity && (!wantState || cState === wantState)
+    }) || clubCandidates[0]
+
+    const clubID = bestClub.clubID || bestClub.id
+    console.log('[golfapi] picked club:', bestClub.clubName, 'clubID:', clubID)
+    if (!clubID) return null
+
+    // Step 2 — fetch club details to get its courses[] array.
+    const club = await goAndLog(`clubs/${clubID}`, 'club detail')
+    const courses = club?.courses || []
+    if (!courses.length) {
+      console.warn('[golfapi] club has no courses')
+      return null
+    }
+    const courseID = courses[0].courseID || courses[0].id
+    console.log('[golfapi] using course:', courses[0].courseName, 'courseID:', courseID)
+    if (!courseID) return null
+
+    // Step 3 — fetch the course, which contains the coordinates array.
+    const course = await goAndLog(`courses/${courseID}`, 'course')
+    const coords = course?.coordinates || []
+    console.log('[golfapi] got', coords.length, 'coordinates')
+    return coords.length ? coords : null
+  }
+
+  // Helper: hit /api/golfapi with the given endpoint, log status + body
+  // preview, parse JSON, and return the data (or null on failure).
+  async function goAndLog(endpoint, label) {
+    try {
+      const res = await fetch(`/api/golfapi?endpoint=${encodeURIComponent(endpoint)}`)
+      const text = await res.text()
+      console.log(`[golfapi] ${label} status:`, res.status, 'body:', text.slice(0, 300))
+      if (!res.ok) return null
+      return JSON.parse(text)
+    } catch (e) {
+      console.warn(`[golfapi] ${label} failed:`, e.message)
+      return null
+    }
   }
 
   function confirmTeeSelection() {
@@ -219,25 +233,59 @@ export default function CourseSearch({ onCourseSelect }) {
       }
       localStorage.setItem('selected_tee', '2')
       onCourseSelect(data)
+      setShowTeeSelector(false)
+      setPendingCourse(null)
+      return
+    }
+
+    const builtData = pendingCourse.builtData
+
+    if (builtData.course.isGolfCourseAPI) {
+      const t = builtData.course.tees
+      const allTees = [...(t?.male || []), ...(t?.female || [])]
+      const chosenTee = allTees[selectedTeeIndex] || allTees[0]
+      if (!chosenTee) return
+
+      const holes = (chosenTee.holes || []).map((h, i) => ({
+        hole: i + 1,
+        yardage: h.yardage || 0,
+        par: h.par || null,
+        handicap: h.handicap || null,
+      }))
+
+      const data = {
+        ...builtData,
+        course: {
+          ...builtData.course,
+          selectedTee: 2,
+          selectedTeeLabel: chosenTee.tee_name || 'Middle',
+          selectedTeeIndex,
+          chosenTee,
+          holes,
+          courseRating: chosenTee.course_rating,
+          slope: chosenTee.slope_rating,
+        }
+      }
+      localStorage.setItem('selected_tee', '2')
+      localStorage.setItem('selected_course', JSON.stringify(data))
+      onCourseSelect(data)
     } else {
-      const builtData = pendingCourse.builtData
+      // Legacy format for permanently cached courses
       const tees = builtData.course.tees || []
       const chosenTee = tees[selectedTeeIndex] || tees[0]
       const scorecard = builtData.course.scorecard
-
       const teeName = chosenTee?.teeName?.toLowerCase() || ''
-      const scorecardTees = scorecard?.tees
       let scorecardHoles = null
 
-      if (scorecardTees) {
+      if (scorecard?.tees) {
         const allTees = [
-          ...(scorecardTees.male || []),
-          ...(scorecardTees.female || []),
+          ...(scorecard.tees.male || []),
+          ...(scorecard.tees.female || []),
         ]
         const matched = allTees.find(t =>
           t.tee_name?.toLowerCase().includes(teeName) ||
           teeName.includes(t.tee_name?.toLowerCase())
-        ) || scorecardTees.male?.[0] || allTees[0]
+        ) || scorecard.tees.male?.[0] || allTees[0]
         scorecardHoles = matched?.holes || null
       }
 
@@ -245,9 +293,12 @@ export default function CourseSearch({ onCourseSelect }) {
         const n = i + 1
         const yardage = chosenTee?.[`length${n}`] || chosenTee?.[`Length${n}`] || 0
         const scorecardHole = scorecardHoles?.[i]
-        const par = scorecardHole?.par || null
-        const handicap = scorecardHole?.handicap || null
-        return { hole: n, yardage, par, handicap }
+        return {
+          hole: n,
+          yardage,
+          par: scorecardHole?.par || null,
+          handicap: scorecardHole?.handicap || null,
+        }
       })
 
       const data = {
@@ -263,7 +314,6 @@ export default function CourseSearch({ onCourseSelect }) {
           slope: chosenTee?.slopeMen,
         }
       }
-
       localStorage.setItem('selected_tee', '2')
       localStorage.setItem('selected_course', JSON.stringify(data))
       onCourseSelect(data)
@@ -274,8 +324,19 @@ export default function CourseSearch({ onCourseSelect }) {
   }
 
   if (showTeeSelector && pendingCourse) {
-    const tees = pendingCourse.builtData?.course?.tees || []
-    const isGolfAPI = !pendingCourse.isLocal || pendingCourse.isPermanent
+    const builtData = pendingCourse.builtData
+    const isGolfCourseAPI = builtData?.course?.isGolfCourseAPI
+    const isLocal = pendingCourse.isLocal && !pendingCourse.isPermanent
+
+    let tees = []
+    if (isGolfCourseAPI) {
+      const t = builtData.course.tees
+      tees = [...(t?.male || []), ...(t?.female || [])]
+    } else if (!isLocal) {
+      tees = builtData?.course?.tees || []
+    }
+
+    const selectedTee = tees[selectedTeeIndex]
 
     return (
       <div style={{ padding: 16 }}>
@@ -291,33 +352,35 @@ export default function CourseSearch({ onCourseSelect }) {
           ⛳ {pendingCourse.club_name}
         </div>
 
-        {isGolfAPI && tees.length > 0 ? (
+        {!isLocal && tees.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
             {tees.map((tee, i) => {
-              const totalYards = Array.from({ length: 18 }, (_, j) =>
-                tee[`length${j + 1}`] || tee[`Length${j + 1}`] || 0
-              ).reduce((a, b) => a + b, 0)
+              const name = tee.tee_name || tee.teeName || `Tee ${i + 1}`
+              const totalYards = tee.total_yards ||
+                (tee.holes ? tee.holes.reduce((a, h) => a + (h.yardage || 0), 0) : 0) ||
+                Array.from({ length: 18 }, (_, j) => tee[`length${j + 1}`] || 0).reduce((a, b) => a + b, 0)
+              const rating = tee.course_rating || tee.courseRatingMen
+              const slope = tee.slope_rating || tee.slopeMen
               return (
-                <button key={tee.teeID || i}
-                  onClick={() => setSelectedTeeIndex(i)}
+                <button key={i} onClick={() => setSelectedTeeIndex(i)}
                   style={{ background: selectedTeeIndex === i ? 'var(--g1)' : '#fff',
                     border: selectedTeeIndex === i
                       ? '2px solid var(--g3)' : '1px solid var(--bd)',
                     borderRadius: 14, padding: '16px 18px', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left' }}>
                   <div style={{ width: 32, height: 32, borderRadius: '50%',
-                    background: tee.teeColor || '#888',
+                    background: tee.teeColor || getTeeColor(name),
                     border: '2px solid rgba(0,0,0,0.2)', flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 16, fontWeight: 700,
                       color: selectedTeeIndex === i ? '#fff' : 'var(--tx)', marginBottom: 2 }}>
-                      {tee.teeName} Tees
+                      {name} Tees
                     </div>
                     <div style={{ fontSize: 12,
                       color: selectedTeeIndex === i ? 'rgba(255,255,255,0.6)' : 'var(--tx2)' }}>
                       {totalYards > 0 ? `${totalYards.toLocaleString()} yards` : ''}
-                      {tee.courseRatingMen ? ` · Rating ${tee.courseRatingMen}` : ''}
-                      {tee.slopeMen ? ` · Slope ${tee.slopeMen}` : ''}
+                      {rating ? ` · Rating ${rating}` : ''}
+                      {slope ? ` · Slope ${slope}` : ''}
                     </div>
                   </div>
                   {selectedTeeIndex === i && <div style={{ fontSize: 20 }}>✅</div>}
@@ -361,8 +424,8 @@ export default function CourseSearch({ onCourseSelect }) {
           style={{ width: '100%', background: 'var(--g1)', color: '#fff',
             border: 'none', borderRadius: 12, padding: '16px',
             fontWeight: 700, fontSize: 16, cursor: 'pointer' }}>
-          {isGolfAPI && tees[selectedTeeIndex]
-            ? `Let's Play ${tees[selectedTeeIndex].teeName} Tees →`
+          {selectedTee
+            ? `Let's Play ${selectedTee.tee_name || selectedTee.teeName} Tees →`
             : 'Let\'s Play →'}
         </button>
       </div>
@@ -375,7 +438,7 @@ export default function CourseSearch({ onCourseSelect }) {
         Find your course
       </div>
       <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 12 }}>
-        Powered by GolfAPI.io · 42,000+ courses
+        Powered by GolfCourseAPI · 40,000+ courses
       </div>
 
       <div style={{ position: 'relative', marginBottom: 12 }}>

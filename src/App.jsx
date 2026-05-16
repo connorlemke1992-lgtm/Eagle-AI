@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { auth } from './firebase'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { syncOnSignIn, pushRoundHistory, clearLocalUserData } from './cloudSync'
 import Login from './Components/Login'
 import Caddie from './Components/Caddie'
 import Scorecard from './Components/Scorecard'
@@ -71,12 +72,43 @@ export default function App() {
   const lastElevationFetch = useRef(null)
 
   useEffect(() => {
+    // Hard timeout: never let the loading screen stick. If Firebase auth
+    // hasn't responded in 3s (offline, bad config, etc.), drop into the
+    // logged-out state so the user can still use the app.
+    const safety = setTimeout(() => setAuthLoading(false), 3000)
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      clearTimeout(safety)
       setUser(firebaseUser)
       setAuthLoading(false)
+      // Kick off cloud sync in the background — never block the UI on it.
+      // If Firestore isn't enabled or the network's down, the app still
+      // works against localStorage; rounds just won't sync across devices
+      // until the call eventually succeeds.
+      if (firebaseUser) {
+        syncOnSignIn(firebaseUser).then(synced => {
+          if (synced?.roundHistory) setRoundHistory(synced.roundHistory)
+        }).catch(err => console.error('[cloudSync] background sync failed:', err))
+      }
     })
-    return () => unsubscribe()
+
+    return () => {
+      clearTimeout(safety)
+      unsubscribe()
+    }
   }, [])
+
+  // Mirror round history to the cloud on every change, but skip the very
+  // first render so we don't immediately overwrite the cloud copy with an
+  // empty array on page load before sign-in completes.
+  const didMountRoundHistory = useRef(false)
+  useEffect(() => {
+    if (!didMountRoundHistory.current) {
+      didMountRoundHistory.current = true
+      return
+    }
+    pushRoundHistory(roundHistory)
+  }, [roundHistory])
 
   function handleCourseSelect(data) {
     setSelectedCourse(data)
@@ -88,6 +120,33 @@ export default function App() {
       setShowCourseSearch(true)
     }
   }
+
+  // Snap the player marker to the tee box of hole 1 whenever we have a
+  // course selected but no useful GPS — either no GPS at all yet, or GPS
+  // that thinks you're more than a mile from the course (the "testing from
+  // my desk" case). Runs on every mount/course change so this works even
+  // when selectedCourse comes back from localStorage on reload.
+  useEffect(() => {
+    if (!selectedCourse) return
+    const courseLat = parseFloat(selectedCourse?.course?.location?.latitude)
+    const courseLng = parseFloat(selectedCourse?.course?.location?.longitude)
+    const farFromCourse = playerPos && courseLat && courseLng &&
+      haversineYards(playerPos.lat, playerPos.lng, courseLat, courseLng) > 5280
+    if (playerPos && !farFromCourse) return // GPS is fine, leave it alone
+
+    const coords = selectedCourse?.course?.coordinates || []
+    const tee1 = coords.find(c =>
+      c.hole === 1 && c.poi === 12 && (c.sideFW === 2 || c.sideFW === undefined)
+    ) || coords.find(c => c.hole === 1 && c.poi === 12)
+    if (tee1) {
+      setPlayerPos({
+        lat: parseFloat(tee1.latitude),
+        lng: parseFloat(tee1.longitude),
+      })
+    } else if (courseLat && courseLng) {
+      setPlayerPos({ lat: courseLat, lng: courseLng })
+    }
+  }, [selectedCourse, playerPos])
 
   function addShot(shot) {
     setShotHistory(prev => [...prev, shot])
@@ -136,6 +195,14 @@ export default function App() {
 
   async function handleSignOut() {
     await signOut(auth)
+    // Wipe cached user data so the next person to sign in on this device
+    // doesn't see the previous user's rounds, bag, or in-flight games.
+    clearLocalUserData()
+    setRoundHistory([])
+    setScores(new Array(18).fill(null))
+    setShotHistory([])
+    setSelectedCourse(null)
+    setShowCourseSearch(true)
     setUser(null)
     setShowProfile(false)
   }
@@ -144,10 +211,17 @@ export default function App() {
     if (!navigator.geolocation) return
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
-        setPlayerPos({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        })
+        const next = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+        // Only accept GPS updates if we're at the course (within ~1 mile).
+        // Otherwise we'd clobber the tee-box snap that handleCourseSelect
+        // sets when you're testing the app away from the course.
+        const courseLat = parseFloat(selectedCourse?.course?.location?.latitude)
+        const courseLng = parseFloat(selectedCourse?.course?.location?.longitude)
+        if (courseLat && courseLng) {
+          const distYds = haversineYards(next.lat, next.lng, courseLat, courseLng)
+          if (distYds > 5280) return
+        }
+        setPlayerPos(next)
         if (pos.coords.altitude !== null) {
           setPlayerElevation(pos.coords.altitude)
         }
@@ -156,7 +230,7 @@ export default function App() {
       { enableHighAccuracy: true, timeout: 12000 }
     )
     return () => navigator.geolocation.clearWatch(watchId)
-  }, [])
+  }, [selectedCourse])
 
   useEffect(() => {
     if (!playerPos || playerElevation !== null) return

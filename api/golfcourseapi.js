@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   try {
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Key ${process.env.GOLF_API_KEY}`,
+        'Authorization': `Key ${process.env.GOLF_COURSE_API_KEY || process.env.VITE_GOLF_API_KEY}`,
         'Content-Type': 'application/json'
       }
     })

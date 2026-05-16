@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(vercel env *)",
+      "Bash(npm run *)",
+      "Bash(start http://localhost:3000)",
+      "Bash(python3 -c 'import urllib.parse; print\\(urllib.parse.quote\\(\"clubs?name=saddleback&country=usa\"\\)\\)')",
+      "Bash(curl \"http://localhost:3000/api/golfapi?endpoint=$\\(python3 -c 'import urllib.parse; print\\(urllib.parse.quote\\(\"clubs?name=saddleback&country=usa\"\\)\\)'\\)\")",
+      "Bash(curl \"http://localhost:3000/api/golfapi?endpoint=clubs%3Fname%3Dsaddleback%26country%3Dusa\")",
+      "Bash(curl \"http://localhost:3000/api/golfcourseapi?endpoint=$\\(echo -n 'search?search_query=saddleback')",
+      "Bash(curl \"http://localhost:3000/api/golfcourseapi?endpoint=search%3Fsearch_query%3Dsaddleback\")",
+      "Bash(curl -H \"Authorization: Bearer da239e49-c643-4fa7-ae17-4845df44bf97\" \"https://www.golfapi.io/api/v2.3/clubs/141520610397251566\")",
+      "Bash(sed -i '/^VITE_$/d' /c/Users/conno/eagle-ai/.env)",
+      "Bash(sed -i 's/^GOLF_API_KEY=IZMVG/VITE_GOLF_API_KEY=IZMVG/' /c/Users/conno/eagle-ai/.env)",
+      "Bash(curl -s -X POST \"http://localhost:3000/api/chat\" -H \"Content-Type: application/json\" -d \"{\\\\\"model\\\\\":\\\\\"claude-sonnet-4-6\\\\\",\\\\\"max_tokens\\\\\":100,\\\\\"messages\\\\\":[{\\\\\"role\\\\\":\\\\\"user\\\\\",\\\\\"content\\\\\":\\\\\"Say hello\\\\\"}]}\")",
+      "Bash(vercel dev *)",
+      "PowerShell(taskkill /f /im node.exe 2>$null)"
+    ]
+  }
+}

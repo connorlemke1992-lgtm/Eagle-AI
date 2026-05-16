@@ -1,0 +1,26 @@
+{
+  "name": "Eagle AI Golf Caddie",
+  "short_name": "Eagle AI",
+  "description": "Your tour-level AI golf caddie — live wind, elevation, club selection, and shot analysis on every hole.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0a2e1a",
+  "background_color": "#0a2e1a",
+  "categories": ["sports", "lifestyle", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

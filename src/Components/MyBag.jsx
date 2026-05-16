@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { pushBag, pushShotShape } from '../cloudSync'
 
 const defaultClubs = [
   { name: 'Driver', yards: 265 },
@@ -91,6 +92,10 @@ export default function MyBag({ onBack }) {
   function saveBag() {
     localStorage.setItem('my_bag', JSON.stringify(clubs))
     localStorage.setItem('shot_shape', shotShape)
+    // Mirror to the cloud so the bag follows the user across devices.
+    // No-ops when signed out.
+    pushBag(clubs)
+    pushShotShape(shotShape)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }

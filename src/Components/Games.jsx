@@ -446,7 +446,7 @@ function MatchPlayGame({ onExit }) {
             {[2, 3].map(i => (
               <div key={i} style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 4,
-                  textTransform: 'uppercase', letterSpacing: '0.05em' }}>Player {i - 1}</div>
+                  textTransform: 'uppercase', letterSpacing: '0.05em' }}>Player {i + 1}</div>
                 <input value={players[i]}
                   onChange={e => { const n = [...players]; n[i] = e.target.value; setPlayers(n) }}
                   style={{ width: '100%', border: '1px solid var(--bd)', borderRadius: 8,

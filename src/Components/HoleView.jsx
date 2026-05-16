@@ -82,6 +82,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const pinPulseRef = useRef(null)
   const shotModeRef = useRef('idle')
   const distanceLineRef = useRef(null)
+  const teeToPinLineRef = useRef(null)
   const crosshairLineRef = useRef(null)
   const holeShotsRef = useRef([])
   const playerPosRef = useRef(null)
@@ -209,6 +210,27 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
       path: [playerPos, pinPos],
       geodesic: true, strokeColor: '#4ade80',
       strokeOpacity: 0.6, strokeWeight: 2,
+      icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
+        offset: '0', repeat: '15px' }],
+      map: mapInstanceRef.current,
+    })
+    updateTeeToPinLine()
+  }
+
+  // Draw a second line straight from the hole's tee box to the current pin.
+  // This gives the player a visual reference for the full hole distance even
+  // after they've walked off the tee — useful for picking targets on long
+  // par 4s and 5s. Drawn in orange so it doesn't get confused with the green
+  // player-to-pin line.
+  function updateTeeToPinLine() {
+    if (!mapInstanceRef.current || !pinPos) return
+    if (teeToPinLineRef.current) teeToPinLineRef.current.setMap(null)
+    const tee = getTeeCoords(currentHole)
+    if (!tee) return
+    teeToPinLineRef.current = new window.google.maps.Polyline({
+      path: [tee, pinPos],
+      geodesic: true, strokeColor: '#f97316',
+      strokeOpacity: 0.55, strokeWeight: 2,
       icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
         offset: '0', repeat: '15px' }],
       map: mapInstanceRef.current,
@@ -386,7 +408,7 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4-6',
           max_tokens: 150,
           messages: [{
             role: 'user',
@@ -574,6 +596,7 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     mapInstanceRef.current.setZoom(17)
     placeHoleMarkers(mapInstanceRef.current)
     if (distanceLineRef.current) distanceLineRef.current.setMap(null)
+    if (teeToPinLineRef.current) teeToPinLineRef.current.setMap(null)
     if (crosshairLineRef.current) crosshairLineRef.current.setMap(null)
     setCrosshairDist(null)
     setCrosshairClub(null)

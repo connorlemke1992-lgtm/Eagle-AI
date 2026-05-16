@@ -165,7 +165,7 @@ Give direct, specific, actionable golf advice. Factor in all conditions automati
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4-6',
           max_tokens: 300,
           system: systemContext,
           messages: apiMessages
