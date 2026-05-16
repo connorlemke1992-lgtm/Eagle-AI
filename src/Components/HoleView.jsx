@@ -66,7 +66,7 @@ function getHoleCoordinates(coordinates, holeNumber, selectedTee = 2) {
 
 export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   playerPos, pinPos, setPinPos, distanceToPin, showSearch, setShowSearch,
-  shotHistory = [], addShot, playerElevation, pinElevation }) {
+  shotHistory = [], addShot, playerElevation, pinElevation, onSnapToTee }) {
 
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
@@ -914,22 +914,31 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
         zIndex: 10, background: 'rgba(15,30,20,0.92)',
         backdropFilter: 'blur(8px)', padding: '10px 16px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr',
+        <div style={{ display: 'grid',
+          gridTemplateColumns: shotMode === 'idle' ? '1fr 1fr 1fr' : '1fr 1fr',
           gap: 8, marginBottom: 8 }}>
           {shotMode === 'idle' ? (
             <>
               <button onClick={handleIJustHit}
                 style={{ background: 'rgba(255,255,255,0.12)', border: 'none',
-                  borderRadius: 10, padding: '10px', cursor: 'pointer',
-                  color: '#fff', fontWeight: 600, fontSize: 13,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  borderRadius: 10, padding: '10px 4px', cursor: 'pointer',
+                  color: '#fff', fontWeight: 600, fontSize: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                 🏌️ I Just Hit
+              </button>
+              <button onClick={() => onSnapToTee && onSnapToTee(currentHole)}
+                style={{ background: 'rgba(74,222,128,0.18)',
+                  border: '1px solid rgba(74,222,128,0.4)',
+                  borderRadius: 10, padding: '10px 4px', cursor: 'pointer',
+                  color: '#4ade80', fontWeight: 600, fontSize: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                📍 Snap to Tee
               </button>
               <button onClick={() => setShowDrawer(!showDrawer)}
                 style={{ background: 'rgba(255,255,255,0.12)', border: 'none',
-                  borderRadius: 10, padding: '10px', cursor: 'pointer',
-                  color: '#fff', fontWeight: 600, fontSize: 13,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  borderRadius: 10, padding: '10px 4px', cursor: 'pointer',
+                  color: '#fff', fontWeight: 600, fontSize: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                 📋 {showDrawer ? 'Hide' : 'More'}
               </button>
             </>

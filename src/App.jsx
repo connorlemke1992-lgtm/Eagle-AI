@@ -214,6 +214,30 @@ export default function App() {
     setCurrentHole(0)
   }
 
+  // Force the player marker to the tee box of the given hole. Used by the
+  // "Snap to Tee" button so the user can test the app from their desk and
+  // see how each hole will look on Sunday, even though GPS thinks they're
+  // somewhere else. Also clears playerElevation so the elevation effect
+  // refetches for the new position (otherwise "to pin" adjustments stay
+  // wrong from stale altitude data).
+  function snapToTeeBox(holeIndex = 0) {
+    if (!selectedCourse) return
+    const coords = selectedCourse?.course?.coordinates || []
+    const target = holeIndex + 1
+    const tee = coords.find(c =>
+      Number(c.hole) === target && Number(c.poi) === 12 &&
+      (Number(c.sideFW) === 2 || c.sideFW === undefined)
+    ) || coords.find(c => Number(c.hole) === target && Number(c.poi) === 12)
+    if (tee) {
+      setPlayerPos({
+        lat: parseFloat(tee.latitude),
+        lng: parseFloat(tee.longitude),
+      })
+      setPlayerElevation(null)
+      lastElevationFetch.current = null
+    }
+  }
+
   async function handleSignOut() {
     await signOut(auth)
     // Wipe cached user data so the next person to sign in on this device
@@ -416,6 +440,7 @@ export default function App() {
             playerElevation={playerElevation}
             pinElevation={pinElevation}
             scores={scores}
+            onSnapToTee={snapToTeeBox}
           />
         )}
         {activeTab === 'scorecard' && (
@@ -461,6 +486,7 @@ export default function App() {
             addShot={addShot}
             playerElevation={playerElevation}
             pinElevation={pinElevation}
+            onSnapToTee={snapToTeeBox}
           />
         )}
       </div>
