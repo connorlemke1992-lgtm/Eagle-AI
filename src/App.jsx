@@ -121,32 +121,46 @@ export default function App() {
     }
   }
 
-  // Snap the player marker to the tee box of hole 1 whenever we have a
-  // course selected but no useful GPS — either no GPS at all yet, or GPS
-  // that thinks you're more than a mile from the course (the "testing from
-  // my desk" case). Runs on every mount/course change so this works even
-  // when selectedCourse comes back from localStorage on reload.
+  // Snap the player marker to the tee box of hole 1 whenever a course is
+  // selected. If the user is actually at the course, the watchPosition
+  // effect will overwrite this within seconds with their real GPS. If
+  // they're testing remotely, the watcher's distance gate (below) will
+  // reject far GPS readings and the snap will stick. We only snap when
+  // selectedCourse changes (not on every playerPos change) to avoid
+  // fighting with legitimate GPS updates while playing.
   useEffect(() => {
     if (!selectedCourse) return
-    const courseLat = parseFloat(selectedCourse?.course?.location?.latitude)
-    const courseLng = parseFloat(selectedCourse?.course?.location?.longitude)
-    const farFromCourse = playerPos && courseLat && courseLng &&
-      haversineYards(playerPos.lat, playerPos.lng, courseLat, courseLng) > 5280
-    if (playerPos && !farFromCourse) return // GPS is fine, leave it alone
-
     const coords = selectedCourse?.course?.coordinates || []
+    console.log('[snap] selectedCourse changed. coords count:', coords.length,
+      'sample:', coords[0])
+
+    // Look for hole 1 tee. Try strict (poi=12, sideFW=2) first, then any
+    // hole 1 tee, then fall back to course center.
     const tee1 = coords.find(c =>
-      c.hole === 1 && c.poi === 12 && (c.sideFW === 2 || c.sideFW === undefined)
-    ) || coords.find(c => c.hole === 1 && c.poi === 12)
+      Number(c.hole) === 1 && Number(c.poi) === 12 &&
+      (Number(c.sideFW) === 2 || c.sideFW === undefined)
+    ) || coords.find(c => Number(c.hole) === 1 && Number(c.poi) === 12)
+
     if (tee1) {
-      setPlayerPos({
+      const pos = {
         lat: parseFloat(tee1.latitude),
         lng: parseFloat(tee1.longitude),
-      })
-    } else if (courseLat && courseLng) {
-      setPlayerPos({ lat: courseLat, lng: courseLng })
+      }
+      console.log('[snap] snapping player to tee of hole 1:', pos)
+      setPlayerPos(pos)
+      return
     }
-  }, [selectedCourse, playerPos])
+
+    const courseLat = parseFloat(selectedCourse?.course?.location?.latitude)
+    const courseLng = parseFloat(selectedCourse?.course?.location?.longitude)
+    if (courseLat && courseLng) {
+      console.log('[snap] no hole 1 tee in coordinates, falling back to course center:',
+        courseLat, courseLng)
+      setPlayerPos({ lat: courseLat, lng: courseLng })
+    } else {
+      console.warn('[snap] no coordinates AND no course location — cannot snap')
+    }
+  }, [selectedCourse])
 
   function addShot(shot) {
     setShotHistory(prev => [...prev, shot])
