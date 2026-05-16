@@ -155,22 +155,20 @@ export default function CourseSearch({ onCourseSelect }) {
 
   // Look this course up in golfapi.io and pull its POI coordinates. The API
   // has three endpoints we chain together:
-  //   1) GET /clubs?name=...  → list of matching clubs
+  //   1) GET /clubs?...  → list of matching clubs
   //   2) GET /clubs/{clubID}  → club details including a courses[] array
   //   3) GET /courses/{courseID}  → full course data (includes coordinates)
-  // Wrapped in try/catch — if any step fails we just return null and the
-  // map falls back to estimated positions.
+  //
+  // Search is the brittle part. golfapi.io's name field is partial-match but
+  // their dataset uses inconsistent naming, so we try a few strategies in
+  // order and stop at the first one that returns matches.
   async function fetchCoordinates(name, location) {
     if (!name) return null
     console.log('[golfapi] looking up:', name, location)
 
-    // Step 1 — search clubs by name (optionally filtered by country).
-    const searchParams = new URLSearchParams({ name })
-    if (location?.country) searchParams.append('country', location.country)
-    const clubs = await goAndLog(`clubs?${searchParams.toString()}`, 'clubs')
-    const clubCandidates = clubs?.clubs || (Array.isArray(clubs) ? clubs : [])
-    if (!clubCandidates.length) {
-      console.warn('[golfapi] no club matches for', name)
+    const candidates = await findClubCandidates(name, location)
+    if (!candidates.length) {
+      console.warn('[golfapi] no club matches after all search strategies')
       return null
     }
 
@@ -178,11 +176,11 @@ export default function CourseSearch({ onCourseSelect }) {
     // common names like "Saddleback" that exist in multiple states.
     const wantCity = location?.city?.toLowerCase()
     const wantState = location?.state?.toLowerCase()
-    const bestClub = clubCandidates.find(c => {
+    const bestClub = candidates.find(c => {
       const cCity = (c.city || c.clubCity || '').toLowerCase()
       const cState = (c.state || c.clubState || '').toLowerCase()
       return wantCity && cCity === wantCity && (!wantState || cState === wantState)
-    }) || clubCandidates[0]
+    }) || candidates[0]
 
     const clubID = bestClub.clubID || bestClub.id
     console.log('[golfapi] picked club:', bestClub.clubName, 'clubID:', clubID)
@@ -204,6 +202,61 @@ export default function CourseSearch({ onCourseSelect }) {
     const coords = course?.coordinates || []
     console.log('[golfapi] got', coords.length, 'coordinates')
     return coords.length ? coords : null
+  }
+
+  // Try a series of /clubs queries until one returns matches. golfapi.io's
+  // search is sensitive to exact naming and country format, so we fall
+  // through:
+  //   1) Full name + country
+  //   2) Full name only (no country filter)
+  //   3) First word of name only (e.g. "Saddleback" instead of full name)
+  //   4) City + state lookup, then client-side name match
+  async function findClubCandidates(name, location) {
+    const country = location?.country
+    const city = location?.city
+    const state = location?.state
+    const firstWord = name.split(/\s+/)[0]
+
+    // Strategy 1 — full name + country.
+    if (country) {
+      const r1 = await searchClubs({ name, country })
+      if (r1.length) return r1
+    }
+
+    // Strategy 2 — full name only.
+    const r2 = await searchClubs({ name })
+    if (r2.length) return r2
+
+    // Strategy 3 — first word only (catches "Saddleback Golf Club" stored
+    // as just "Saddleback" or with a different suffix).
+    if (firstWord && firstWord.toLowerCase() !== name.toLowerCase()) {
+      const r3 = await searchClubs({ name: firstWord })
+      if (r3.length) return r3
+    }
+
+    // Strategy 4 — search by city/state and filter client-side. Last resort
+    // because it can return a lot of unrelated clubs.
+    if (city && state) {
+      const r4 = await searchClubs({ city, state })
+      if (r4.length) {
+        const wantLower = name.toLowerCase()
+        const fuzzy = r4.filter(c => {
+          const cName = (c.clubName || c.name || '').toLowerCase()
+          return cName.includes(firstWord.toLowerCase()) ||
+                 wantLower.includes(cName) || cName.includes(wantLower)
+        })
+        if (fuzzy.length) return fuzzy
+        return r4 // even unfiltered, the city+state shortlist is useful
+      }
+    }
+
+    return []
+  }
+
+  async function searchClubs(params) {
+    const qs = new URLSearchParams(params).toString()
+    const result = await goAndLog(`clubs?${qs}`, `clubs(${qs})`)
+    return result?.clubs || (Array.isArray(result) ? result : [])
   }
 
   // Helper: hit /api/golfapi with the given endpoint, log status + body
