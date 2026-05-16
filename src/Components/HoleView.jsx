@@ -88,6 +88,11 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   const crosshairToPinLineRef = useRef(null)
   const aimMarkerRef = useRef(null)
   const aimPointRef = useRef(null) // {lat, lng} once user has placed/dragged aim
+  // Reactive values that map event listeners need at "current" time. Listeners
+  // are attached once (in initMap/placeHoleMarkers) and would otherwise close
+  // over stale values when the user switches holes.
+  const pinPosRef = useRef(null)
+  const currentHoleRef = useRef(0)
   const holeShotsRef = useRef([])
   const playerPosRef = useRef(null)
 
@@ -147,6 +152,14 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   useEffect(() => {
     playerPosRef.current = playerPos
   }, [playerPos])
+
+  useEffect(() => {
+    pinPosRef.current = pinPos
+  }, [pinPos])
+
+  useEffect(() => {
+    currentHoleRef.current = currentHole
+  }, [currentHole])
 
   useEffect(() => {
     if (!playerPos || !coordinates.length) return
@@ -226,10 +239,15 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
   }
 
   function updateDistanceLine() {
-    if (!mapInstanceRef.current || !playerPos || !pinPos) return
+    // Read from refs so listeners (pin drag, etc.) always see the current
+    // values rather than the stale closure values from the listener's
+    // attachment time.
+    const currentPlayer = playerPosRef.current
+    const currentPin = pinPosRef.current
+    if (!mapInstanceRef.current || !currentPlayer || !currentPin) return
     if (distanceLineRef.current) distanceLineRef.current.setMap(null)
     distanceLineRef.current = new window.google.maps.Polyline({
-      path: [playerPos, pinPos],
+      path: [currentPlayer, currentPin],
       geodesic: true, strokeColor: '#4ade80',
       strokeOpacity: 0.6, strokeWeight: 2,
       icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
@@ -241,16 +259,17 @@ export default function HoleView({ currentHole, setCurrentHole, onCourseSelect,
 
   // Draw a second line straight from the hole's tee box to the current pin.
   // This gives the player a visual reference for the full hole distance even
-  // after they've walked off the tee — useful for picking targets on long
-  // par 4s and 5s. Drawn in orange so it doesn't get confused with the green
-  // player-to-pin line.
+  // after they've walked off the tee. Read pin/hole from refs so map event
+  // listeners that call this don't use stale values after a hole switch.
   function updateTeeToPinLine() {
-    if (!mapInstanceRef.current || !pinPos) return
+    const currentPin = pinPosRef.current
+    const hole = currentHoleRef.current
+    if (!mapInstanceRef.current || !currentPin) return
     if (teeToPinLineRef.current) teeToPinLineRef.current.setMap(null)
-    const tee = getTeeCoords(currentHole)
+    const tee = getTeeCoords(hole)
     if (!tee) return
     teeToPinLineRef.current = new window.google.maps.Polyline({
-      path: [tee, pinPos],
+      path: [tee, currentPin],
       geodesic: true, strokeColor: '#f97316',
       strokeOpacity: 0.55, strokeWeight: 2,
       icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
@@ -471,7 +490,10 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     const centerLat = aimPoint.lat
     const centerLng = aimPoint.lng
 
-    const teeCoords = getTeeCoords(currentHole)
+    // Read from refs — listeners attached on initMap would otherwise see
+    // the original (stale) currentHole and draw lines to the wrong place.
+    const hole = currentHoleRef.current
+    const teeCoords = getTeeCoords(hole)
     const currentPlayerPos = playerPosRef.current
     const currentHoleShots = holeShotsRef.current
 
@@ -499,12 +521,16 @@ Was this a good strike? Any quick tip? Plain text only, no markdown.`
     // Second leg: from the aim point to the pin, so you can see "if I land
     // here, what's left in." Drawn in red so it's clearly different from
     // the yellow tee→aim leg.
+    // Always pull pin from the ref — the listener closure has the stale
+    // pinPos from when the map was initialized, which points at the wrong
+    // hole's green after a switch.
+    const currentPin = pinPosRef.current
     if (crosshairToPinLineRef.current) crosshairToPinLineRef.current.setMap(null)
-    if (pinPos) {
-      const remaining = haversineYards(centerLat, centerLng, pinPos.lat, pinPos.lng)
+    if (currentPin) {
+      const remaining = haversineYards(centerLat, centerLng, currentPin.lat, currentPin.lng)
       setCrosshairToPinDist(remaining)
       crosshairToPinLineRef.current = new window.google.maps.Polyline({
-        path: [aimPoint, pinPos],
+        path: [aimPoint, currentPin],
         geodesic: true, strokeColor: '#ef4444',
         strokeOpacity: 0.85, strokeWeight: 2,
         icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
