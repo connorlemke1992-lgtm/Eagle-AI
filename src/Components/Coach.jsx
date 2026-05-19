@@ -147,15 +147,32 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin, scor
     const shotShape = localStorage.getItem('shot_shape') || 'fade'
     const scoreContext = getScoreContext()
 
+    // Build a compact scorecard string for every hole on the course so the
+    // user can ask "what's hole 7?" or "play me through the back 9" and
+    // Eagle has the par/yardage/handicap for every hole, not just current.
+    const scorecard = holes.length
+      ? holes.map((hl, i) => {
+          const par = hl?.par ?? '?'
+          const yds = hl?.yardage ?? hl?.yards ?? '?'
+          const hcp = hl?.handicap ?? hl?.hcp ?? '?'
+          return `H${i + 1}: Par ${par}, ${yds}y, HCP ${hcp}`
+        }).join(' | ')
+      : null
+
     const systemContext = `You are Eagle, an elite AI golf coach and caddie.
 ${courseName ? `Player is at ${courseName}.` : ''}
+${scorecard ? `Full scorecard: ${scorecard}` : ''}
 ${h ? `Current hole: Hole ${currentHole + 1}, Par ${h.par || '?'}, ${h.yardage || h.yards || '?'} yards, Handicap ${h.handicap || '?'}.` : `Current hole: Hole ${currentHole + 1}.`}
 ${distanceToPin ? `Distance to pin: ${distanceToPin} yards.` : ''}
 ${weather ? `Conditions: ${weather.windSpeed} mph wind from ${weather.windDir}, gusting ${weather.windGusts} mph, ${weather.temp}°F, ${weather.rain ? 'raining' : 'no rain'}.` : ''}
 ${scoreContext ? scoreContext : ''}
 Shot shape: ${shotShape}.
 
-Give direct, specific, actionable golf advice. Factor in all conditions automatically without being asked. Be conversational but expert. No markdown, no asterisks, plain text only.`
+You have the full scorecard above. When the user asks about a hole other than
+the current one (e.g. "what's hole 7?", "tell me about the par 5s", "strategy
+for back 9"), reference the scorecard data directly. Give direct, specific,
+actionable golf advice. Factor in conditions automatically. Be conversational
+but expert. No markdown, no asterisks, plain text only.`
 
     try {
       // Cap at last 20 messages to avoid context window issues
