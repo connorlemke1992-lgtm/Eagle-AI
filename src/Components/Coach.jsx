@@ -147,6 +147,19 @@ export default function Coach({ currentHole, selectedCourse, distanceToPin, scor
     const shotShape = localStorage.getItem('shot_shape') || 'fade'
     const scoreContext = getScoreContext()
 
+    // Load the player's bag from localStorage (set in the MyBag screen) so
+    // Coach can recommend specific clubs by name and reason about gaps.
+    // Stored as an array of { name, yards }.
+    const bag = (() => {
+      try {
+        const raw = localStorage.getItem('my_bag')
+        return raw ? JSON.parse(raw) : []
+      } catch { return [] }
+    })()
+    const bagString = bag.length
+      ? bag.map(c => `${c.name} ${c.yards}y`).join(', ')
+      : null
+
     // Build a compact scorecard string for every hole on the course so the
     // user can ask "what's hole 7?" or "play me through the back 9" and
     // Eagle has the par/yardage/handicap for every hole, not just current.
@@ -167,12 +180,15 @@ ${distanceToPin ? `Distance to pin: ${distanceToPin} yards.` : ''}
 ${weather ? `Conditions: ${weather.windSpeed} mph wind from ${weather.windDir}, gusting ${weather.windGusts} mph, ${weather.temp}°F, ${weather.rain ? 'raining' : 'no rain'}.` : ''}
 ${scoreContext ? scoreContext : ''}
 Shot shape: ${shotShape}.
+${bagString ? `Player's bag (stock carry distances): ${bagString}.` : ''}
 
-You have the full scorecard above. When the user asks about a hole other than
-the current one (e.g. "what's hole 7?", "tell me about the par 5s", "strategy
-for back 9"), reference the scorecard data directly. Give direct, specific,
-actionable golf advice. Factor in conditions automatically. Be conversational
-but expert. No markdown, no asterisks, plain text only.`
+You have the full scorecard AND the player's bag above. When the user asks
+about a hole other than the current one (e.g. "what's hole 7?", "play the
+par 5s for me", "strategy for back 9"), reference the scorecard. When they
+ask club selection questions, recommend specific clubs from their bag by
+name. Give direct, specific, actionable golf advice. Factor in conditions
+automatically. Be conversational but expert. No markdown, no asterisks,
+plain text only.`
 
     try {
       // Cap at last 20 messages to avoid context window issues
